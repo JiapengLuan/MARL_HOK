@@ -284,11 +284,7 @@ class Model():
 
     def _inference(self, each_hero_data_list, only_inference=True):
         whole_feature_list = State_splitter().split_features(each_hero_data_list)
-        each_hero_FeatureImgLikeMg_deepfeature=[]
-        for hero_index in range(len(each_hero_data_list)):
-            this_hero_FeatureImgLikeMg_list = whole_feature_list[hero_index][0]
-            each_hero_FeatureImgLikeMg_deepfeature.append(self.resnet_inference(
-                this_hero_FeatureImgLikeMg_list, Config.resnet_FeatureImgLikeMg_n, reuse=tf.compat.v1.AUTO_REUSE))
+        extracted_feature = Feature_extraction().get_extracted_feature(whole_feature_list)
 
         hero_fc1_weight_list = []
         hero_fc1_bias_list = []
@@ -388,8 +384,9 @@ class State_splitter():
     '''
     split states of 3 heros into kaiwu website format, use function split_features
     '''
-    def  __init__(self):
-        pass   
+
+    def __init__(self):
+        pass
 
     def _split_features_one_hero(self, this_hero_data_list):
         '''
@@ -397,24 +394,31 @@ class State_splitter():
         '''
         # this_hero_data_list = each_hero_data_list[0]
         # get the image like feature 1d vector arranged in (6,17,17) order, and convert that into tensor of shape (height, width, depth) (1,17,17,6)
-        this_hero_FeatureImgLikeMg_vec_list = tf.reshape(this_hero_data_list[:6*17*17],[6, 17, 17])
+        this_hero_FeatureImgLikeMg_vec_list = tf.reshape(
+            this_hero_data_list[:6*17*17], [6, 17, 17])
         this_hero_FeatureImgLikeMg_list = tf.transpose(
             this_hero_FeatureImgLikeMg_vec_list, perm=[1, 2, 0])
         # get VecFeatureHero and split it into shape of (1,6,251) [us 3, opponent 3]
-        this_hero_VecFeatureHero_list = tf.reshape(this_hero_data_list[1734:3239+1],[6, 251])
-        # get MainHeroFeature with shape of (1,44)
-        this_hero_MainHeroFeature_list = this_hero_data_list[3240:3283+1]
+        this_hero_VecFeatureHero_list = tf.reshape(
+            this_hero_data_list[1734:3239+1], [6, 251])
+        # get MainHeroFeature with shape of (1,1,44)
+        this_hero_MainHeroFeature_list = tf.reshape(
+            this_hero_data_list[3240:3283+1], [1, 44])
         # get VecSoldier and split it into shape of (1,20,25)
-        this_hero_VecSoldier_list = tf.reshape(this_hero_data_list[3284:3783+1],[20, 25])
+        this_hero_VecSoldier_list = tf.reshape(
+            this_hero_data_list[3284:3783+1], [20, 25])
         # get VecOrgan and split it into shape of (1,6,29)
-        this_hero_VecOrgan_list = tf.reshape(this_hero_data_list[3784:3957+1],[6, 29])
+        this_hero_VecOrgan_list = tf.reshape(
+            this_hero_data_list[3784:3957+1], [6, 29])
         # get VecMonster and split it into shape of (1,20,28)
-        this_hero_VecMonster_list = tf.reshape(this_hero_data_list[3958:4517+1],[20, 28])
-        # get VecCampsWholeInfo with shape of (1,68)
-        this_hero_VecCampsWholeInfo_list = this_hero_data_list[4518:4585+1]
-        whole_feature_list=[]
+        this_hero_VecMonster_list = tf.reshape(
+            this_hero_data_list[3958:4517+1], [20, 28])
+        # get VecCampsWholeInfo with shape of (1,1,68)
+        this_hero_VecCampsWholeInfo_list = tf.reshape(
+            this_hero_data_list[4518:4585+1], [1, 68])
+        whole_feature_list = []
         for items in [this_hero_FeatureImgLikeMg_list, this_hero_VecFeatureHero_list, this_hero_MainHeroFeature_list, this_hero_VecSoldier_list, this_hero_VecOrgan_list, this_hero_VecMonster_list, this_hero_VecCampsWholeInfo_list]:
-            whole_feature_list.append(tf.expand_dims(items,axis=0))
+            whole_feature_list.append(tf.expand_dims(items, axis=0))
         return whole_feature_list
 
     def split_features(self, each_hero_data_list):
@@ -423,16 +427,17 @@ class State_splitter():
             splitted_features.append(self._split_features_one_hero(
                 tf.squeeze(each_hero_data_list[hero_index][0])))
         return splitted_features
-    
+
     def get_states_names(self):
-        ['FeatureImgLikeMg','VecFeatureHero','MainHeroFeature','VecSoldier','VecOrgan','VecMonster','VecCampsWholeInfo']
-    
+        ['FeatureImgLikeMg', 'VecFeatureHero', 'MainHeroFeature',
+            'VecSoldier', 'VecOrgan', 'VecMonster', 'VecCampsWholeInfo']
+
 
 class Feature_extraction():
     '''extract features. from raw state data to deep features'''
 
     def __init__(self):
-        pass
+        self.reuse = Config.reuse
 
     def create_variables(self, name, shape, initializer=tf.contrib.layers.xavier_initializer(), is_fc_layer=False, trainable=True):
         '''
@@ -446,7 +451,7 @@ class Feature_extraction():
 
         # TODO: to allow different weight decay to fully connected layer and conv layer
         regularizer = tf.contrib.layers.l2_regularizer(
-            scale=tf.constant(0,dtype=tf.float32))
+            scale=tf.constant(0, dtype=tf.float32))
 
         new_variables = tf.get_variable(name, shape=shape, initializer=initializer,
                                         regularizer=regularizer, trainable=trainable)
@@ -461,13 +466,12 @@ class Feature_extraction():
         '''
         input_dim = input_layer.get_shape().as_list()[-1]
         fc_w = self.create_variables(name='fc_weights', shape=[input_dim, num_labels], is_fc_layer=True,
-                                initializer=tf.uniform_unit_scaling_initializer(factor=1.0))
+                                     initializer=tf.uniform_unit_scaling_initializer(factor=1.0))
         fc_b = self.create_variables(name='fc_bias', shape=[
-                                num_labels], initializer=tf.zeros_initializer())
+            num_labels], initializer=tf.zeros_initializer())
 
         fc_h = tf.matmul(input_layer, fc_w) + fc_b
         return fc_h
-
 
     def fc_layer(self, input_vec, output_dims):
         '''
@@ -477,14 +481,15 @@ class Feature_extraction():
         :return: output layer Y = WX + B
         '''
         input_dims = input_vec.get_shape().as_list()[-1]
+        input_dims_num = len(input_vec.get_shape().as_list())
         fc_w = self.create_variables(name='fc_weights', shape=[input_dims, output_dims], is_fc_layer=True,
-                                initializer=tf.uniform_unit_scaling_initializer(factor=1.0))
+                                     initializer=tf.uniform_unit_scaling_initializer(factor=1.0))
         fc_b = self.create_variables(name='fc_bias', shape=[
-                                output_dims], initializer=tf.zeros_initializer())
-
+            output_dims], initializer=tf.zeros_initializer())
+        input_vec = tf.expand_dims(input_vec, 0)
         fc_h = tf.matmul(input_vec, fc_w) + fc_b
         return fc_h
-    
+
     def bn_relu_fc_layer(self, input_layer, output_dims):
         '''
         A helper function to  batch normalize, relu and fc the input tensor sequentially
@@ -492,9 +497,8 @@ class Feature_extraction():
         :param output_dims: int. 
         :return: 1D tensor. Y = Relu(batch_normalize(conv(X)))
         '''
-        
-        
-        #bn part
+
+        # bn part
         mean, variance = tf.nn.moments(input_layer, axes=[0])
         beta = tf.get_variable('beta', 1, tf.float32,
                                initializer=tf.constant_initializer(0.0, tf.float32))
@@ -506,7 +510,7 @@ class Feature_extraction():
         relu_layer = tf.nn.relu(bn_layer)
         fc_layer = self.fc_layer(relu_layer, output_dims)
         return output
-    
+
     def fc_bn_relu_layer(self, input_layer, output_dims):
         '''
         A helper function to  fc, batch normalize, relu  the input tensor sequentially
@@ -514,9 +518,8 @@ class Feature_extraction():
         :param output_dims: int. 
         :return: 1D tensor. Y = Relu(batch_normalize(fc(X)))
         '''
-        
-        
-        #bn part
+
+        # bn part
         fc_layer = self.fc_layer(input_layer, output_dims)
         mean, variance = tf.nn.moments(fc_layer, axes=[0])
         beta = tf.get_variable('beta', 1, tf.float32,
@@ -527,29 +530,28 @@ class Feature_extraction():
             fc_layer, mean, variance, beta, gamma, Config.BN_EPSILON)
 
         relu_layer = tf.nn.relu(bn_layer)
-        
-        return output
-    
+
+        return relu_layer
+
     def res_fc_block(self, input_layer, output_dims):
         '''
         res_fc_block (unfinished)
         '''
 
         input_dim = input_layer.get_shape().as_list()[-1]
-        if not input_dim==output_dims:
-            if_change_dim = True  
+        if not input_dim == output_dims:
+            if_change_dim = True
         else:
             if_change_dim = False
-        fc_layer=bn_relu_fc_layer(self, input_layer, output_dims)
-        
-        ksize_pool=input_dim//output_dims+1
+        fc_layer = bn_relu_fc_layer(self, input_layer, output_dims)
+
+        ksize_pool = input_dim//output_dims+1
         if increase_dim is True:
             pooled_input = tf.nn.avg_pool(input_layer, ksize=[ksize_pool],
                                           strides=[ksize_pool], padding='SAME')
             # padded_input = tf.pad(pooled_input, [[0, 0], [0, 0], [0, 0], [input_channel // 2,
             #                                                               input_channel // 2]])
         return padded_input
-
 
     def batch_normalization_layer(self, input_layer, dimension):
         '''
@@ -666,33 +668,35 @@ class Feature_extraction():
         '''
 
         layers = []
-        with tf.variable_scope('conv0', reuse=reuse):
-            conv0 = self.conv_bn_relu_layer(input_tensor_batch, [7, 7, 6, 16], 1)
+        with tf.variable_scope('conv0', reuse=self.reuse):
+            conv0 = self.conv_bn_relu_layer(
+                input_tensor_batch, [7, 7, 6, 16], 1)
             # activation_summary(conv0)
             layers.append(conv0)
 
         for i in range(n):
-            with tf.variable_scope('conv1_%d' % i, reuse=reuse):
+            with tf.variable_scope('conv1_%d' % i, reuse=self.reuse):
                 if i == 0:
-                    conv1 = self.residual_block(layers[-1], 16, first_block=True)
+                    conv1 = self.residual_block(
+                        layers[-1], 16, first_block=True)
                 else:
                     conv1 = self.residual_block(layers[-1], 16)
                 # activation_summary(conv1)
                 layers.append(conv1)
 
         for i in range(n):
-            with tf.variable_scope('conv2_%d' % i, reuse=reuse):
+            with tf.variable_scope('conv2_%d' % i, reuse=self.reuse):
                 conv2 = self.residual_block(layers[-1], 32)
                 # activation_summary(conv2)
                 layers.append(conv2)
 
         for i in range(n):
-            with tf.variable_scope('conv3_%d' % i, reuse=reuse):
+            with tf.variable_scope('conv3_%d' % i, reuse=self.reuse):
                 conv3 = self.residual_block(layers[-1], 64)
                 layers.append(conv3)
             assert conv3.get_shape().as_list()[1:] == [5, 5, 64]
 
-        with tf.variable_scope('fc', reuse=reuse):
+        with tf.variable_scope('fc', reuse=self.reuse):
             in_channel = layers[-1].get_shape().as_list()[-1]
             bn_layer = self.batch_normalization_layer(layers[-1], in_channel)
             relu_layer = tf.nn.relu(bn_layer)
@@ -704,25 +708,27 @@ class Feature_extraction():
 
         return layers[-1]
 
-    def vec_feature_extraction(self,vec_state_list):
-        input_dim_list=[vec_state.get_shape().as_list()[-1] for vec_state in vec_state_list]
+    def vec_feature_extraction(self, vec_state_list):
+        input_dim_list = [vec_state.get_shape().as_list()[-1]
+                          for vec_state in vec_state_list]
         # num of units per class of states e.g.10 for VecSoldier since there are 10 soldiers
-        num_unit_perState_list=[vec_state.get_shape().as_list()[-2] for vec_state in vec_state_list] 
-        state_name_list=State_splitter.get_states_names()[1:]
+        num_unit_perState_list = [vec_state.get_shape(
+        ).as_list()[-2] for vec_state in vec_state_list]
+        state_name_list = Config.states_names[1:]
 
-        assert len(state_name_list)==len(input_dim_list)
+        assert len(state_name_list) == len(input_dim_list)
 
-        output_vec_feature_list=[]
-        for i,state_name in enumerate(state_name_list):
-            this_unit_feature_list=[]
-            for j in range(num_unit_perState_list[i])
-                with tf.variable_scope(state_name+f'_{j}', reuse=reuse):
-                    input_layer=vec_state_list[i][j]
-                    this_unit_feature_list.append(fc_bn_relu_layer(self, input_layer,Config.vec_feat_extract_out_dims[i]))
+        output_vec_feature_list = []
+        for i, state_name in enumerate(state_name_list):
+            this_unit_feature_list = []
+            for j in range(num_unit_perState_list[i]):
+                with tf.variable_scope(state_name+f'_{j}', reuse=self.reuse):
+                    input_layer = vec_state_list[i][0][j]
+                    this_unit_feature_list.append(self.fc_bn_relu_layer(
+                        input_layer, Config.vec_feat_extract_out_dims[i]))
             output_vec_feature_list.append(this_unit_feature_list)
-        
+
         return output_vec_feature_list
-            
 
     def img_feature_extraction(self, input_tensor_batch, n, reuse):
         '''
@@ -730,4 +736,22 @@ class Feature_extraction():
         :param: input_tensor_batch: input img like feature. Shape [1,17,17,6]([batch_size, IMG_HEIGHT, IMG_WIDTH, IMG_DEPTH])
         :param: n: num_residual_blocks
         '''
-        return self.resnet_inference(self, input_tensor_batch, n, reuse)
+        return self.resnet_inference(input_tensor_batch, n, reuse)
+
+    def get_extracted_feature(self, whole_feature_list):
+        extracted_feature_all_heros = []
+        for i, each_hero_feature in enumerate(whole_feature_list):
+            with tf.variable_scope('hero'+f'_{i}', reuse=self.reuse):
+                n = Config.resnet_FeatureImgLikeMg_n
+                img_feature_extracted = [self.img_feature_extraction(
+                    each_hero_feature[0], n, self.reuse)]
+                vec_feature_extracted_list = self.vec_feature_extraction(
+                    each_hero_feature[1:])
+                vec_feature_extracted_list_flatten=[]
+                for vec in vec_feature_extracted_list:
+                    vec_feature_extracted_list_flatten.append(tf.concat(vec, 1))
+                whole_feature_list_extracted = img_feature_extracted + vec_feature_extracted_list_flatten
+                whole_feature_extracted = tf.concat(
+                    whole_feature_list_extracted, 1)
+            extracted_feature_all_heros.append(whole_feature_extracted)
+        return extracted_feature_all_heros
