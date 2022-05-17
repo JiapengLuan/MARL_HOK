@@ -87,13 +87,13 @@ class Model():
                 self.batch_size, self.hero_data_split_shape[2][0]), name="feature_hero2", dtype=np.float32)
             hero_data_list.append(self.feature_hero2)
             self.lstm_cell_ph = tf.placeholder(shape=(
-                self.batch_size, self.lstm_hidden_dim), name="lstm_cell", dtype=np.float32)
+                3, self.batch_size, self.lstm_hidden_dim), name="lstm_cell", dtype=np.float32)
             self.lstm_hidden_ph = tf.placeholder(shape=(
-                self.batch_size, self.lstm_hidden_dim), name="lstm_hidden", dtype=np.float32)
+                3, self.batch_size, self.lstm_hidden_dim), name="lstm_hidden", dtype=np.float32)
 
             each_hero_data_list = self._split_inference_data(hero_data_list)
             probs_list = self._inference(
-                each_hero_data_list, only_inference=True)
+                each_hero_data_list, self.lstm_cell_ph, self.lstm_hidden_ph, only_inference=True)
             # 3v3 output
             self.probs_h0 = tf.layers.flatten(tf.concat(probs_list[0], axis=1))
             self.probs_h1 = tf.layers.flatten(tf.concat(probs_list[1], axis=1))
@@ -282,9 +282,17 @@ class Model():
 
         return cost_all, value_cost, policy_cost, entropy_cost
 
-    def _inference(self, each_hero_data_list, only_inference=True):
+    def _inference(self, each_hero_data_list, lstm_cell_all_hero, lstm_hidden_all_hero, only_inference=True):
+        # split states
         whole_feature_list = State_splitter().split_features(each_hero_data_list)
+        # feature extraction
         extracted_feature = Feature_extraction().get_extracted_feature(whole_feature_list)
+        # LSTM, hidden_out is output
+        # feature_dim=extracted_feature[0].get_shape().as_list()[-1]
+        cell_out, hidden_out = LSTM(lstm_hidden_dim=self.lstm_hidden_dim).lstm_inference(
+            extracted_feature, lstm_cell_all_hero, lstm_hidden_all_hero)
+        # Communications
+        Comm_out = Communication().COMM_inference(hidden_out)
 
         hero_fc1_weight_list = []
         hero_fc1_bias_list = []
@@ -747,11 +755,93 @@ class Feature_extraction():
                     each_hero_feature[0], n, self.reuse)]
                 vec_feature_extracted_list = self.vec_feature_extraction(
                     each_hero_feature[1:])
-                vec_feature_extracted_list_flatten=[]
+                vec_feature_extracted_list_flatten = []
                 for vec in vec_feature_extracted_list:
-                    vec_feature_extracted_list_flatten.append(tf.concat(vec, 1))
-                whole_feature_list_extracted = img_feature_extracted + vec_feature_extracted_list_flatten
+                    vec_feature_extracted_list_flatten.append(
+                        tf.concat(vec, 1))
+                whole_feature_list_extracted = img_feature_extracted + \
+                    vec_feature_extracted_list_flatten
                 whole_feature_extracted = tf.concat(
                     whole_feature_list_extracted, 1)
             extracted_feature_all_heros.append(whole_feature_extracted)
         return extracted_feature_all_heros
+
+
+class LSTM():
+    def __init__(self, lstm_hidden_dim):
+        self.lstm_hidden_dim = lstm_hidden_dim
+        self.lstm_cell = tf.nn.rnn_cell.LSTMCell(self.lstm_hidden_dim)
+        self.reuse = Config.reuse
+    # LSTM Start
+    # def _init_lstm_cell(self):
+    #     # lstm_cell = tf.nn.rnn_cell.LSTMCell(self.lstm_hidden_dim)
+    #     lstm_cell = tf.keras.layers.LSTM(self.lstm_hidden_dim)
+    #     return lstm_cell
+
+    def _lstm_forward(self, lstm_input, cell_ph, hidden_ph):
+        # lstm_input: [batch_size, input_size]
+        # cell_ph: [batch_size, self.lstm_hidden_dim]
+        # hidden_ph: [batch_size, self.lstm_hidden_dim]
+        hidden_out, out = self.lstm_cell(lstm_input, [cell_ph, hidden_ph])
+        cell_out = out[0]
+
+        return cell_out, hidden_out
+
+    def lstm_inference(self, extracted_feature, cell_all_hero, hidden_all_hero):
+        cell_out_all_hero = []
+        hidden_out_all_hero = []
+        for i in range(len(extracted_feature)):
+            ext_feat_this_hero = extracted_feature[i]
+            cell_in_this_hero = cell_all_hero[i]
+            hidden_in_this_hero = hidden_all_hero[i]
+            with tf.variable_scope('hero'+f'_{i}_lstm', reuse=self.reuse):
+                cell_out_this_hero, hidden_out_this_hero = self._lstm_forward(
+                    ext_feat_this_hero, cell_in_this_hero, hidden_in_this_hero)
+            cell_out_all_hero.append(cell_out_this_hero)
+            hidden_out_all_hero.append(hidden_out_this_hero)
+        return cell_out_all_hero, hidden_out_all_hero
+
+    # LSTM End
+
+
+class Communication():
+    '''Communication between 3 heros'''
+
+    def __init__(self):
+        self.score_fc_weight_initializer = Config.score_fc_weight_initializer
+        self.reuse = Config.reuse
+
+    def _get_score_shape(self, input_feature_ah):  # ah: all heros; ph: per hero
+        dim_list = [feature.get_shape().as_list()[-1]
+                    for feature in input_feature_ah]
+        return [sum(dim_list), 9]
+
+    def _attention(self, input_feature_ah):
+        with tf.variable_scope('Communication', reuse=self.reuse):
+            socre_weight_shape = self._get_score_shape(input_feature_ah)
+            hero_score = self._fc_weight_variable(
+                shape=socre_weight_shape, name="Attention_score_weight")
+            hero_feature = tf.concat(
+                [input_feature_ah[0], input_feature_ah[1]], axis=1)
+            hero_feature = tf.concat(
+                [hero_feature, input_feature_ah[2]], axis=1)
+            score = tf.nn.tanh(tf.matmul(hero_feature, hero_score))
+            score_w = tf.nn.softmax(score, axis=-1)
+            feature_data_list0 = input_feature_ah[0] * score_w[:, 0:1] + \
+                input_feature_ah[1] * score_w[:, 1:2] + \
+                input_feature_ah[2] * score_w[:, 2:3]
+            feature_data_list1 = input_feature_ah[0] * score_w[:, 3:4] + \
+                input_feature_ah[1] * score_w[:, 4:5] + \
+                input_feature_ah[2] * score_w[:, 5:6]
+            feature_data_list2 = input_feature_ah[0] * score_w[:, 6:7] + \
+                input_feature_ah[1] * score_w[:, 7:8] + \
+                input_feature_ah[2] * score_w[:, 8:9]
+            return [feature_data_list0, feature_data_list1, feature_data_list2]
+
+    def _fc_weight_variable(self, shape, name, trainable=True):
+        #initializer = tf.contrib.layers.xavier_initializer()
+        # initializer = tf.orthogonal_initializer()
+        return tf.get_variable(name, shape=shape, initializer=self.score_fc_weight_initializer, trainable=trainable)
+
+    def COMM_inference(self, input_feature_ah):
+        return self._attention(input_feature_ah)

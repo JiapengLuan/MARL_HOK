@@ -4,7 +4,7 @@ import tensorflow as tf
 class ModelConfig:
     HERO_NUM = 3
     LSTM_TIME_STEPS = 16
-    LSTM_UNIT_SIZE = 16
+    LSTM_UNIT_SIZE = 128
     HERO_DATA_SPLIT_SHAPE = [
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
@@ -43,3 +43,6 @@ class ModelConfig:
     states_names=['FeatureImgLikeMg','VecFeatureHero','MainHeroFeature','VecSoldier','VecOrgan','VecMonster','VecCampsWholeInfo']
 
     vec_feat_extract_out_dims=[16,16,16,16,16,16] 
+
+
+    score_fc_weight_initializer=tf.orthogonal_initializer()
