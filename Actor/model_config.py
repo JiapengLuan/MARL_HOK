@@ -36,7 +36,7 @@ class ModelConfig:
     TASK_UUID = "10ad0318-893f-4426-ac8e-44f109561350"
     data_shapes = [[sum(HERO_DATA_SPLIT_SHAPE[0])*LSTM_TIME_STEPS + LSTM_UNIT_SIZE*2]] * 3
 
-
+    import tensorflow as tf
     BN_EPSILON=0.001
     resnet_FeatureImgLikeMg_n=2 #num of residual blocks used for FeatureImgLike per hero
     reuse = tf.compat.v1.AUTO_REUSE #REUSE parameter for tf.variable_scope()
