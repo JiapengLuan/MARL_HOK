@@ -282,8 +282,10 @@ class Model():
 
         return cost_all, value_cost, policy_cost, entropy_cost
 
-    def _inference(self, each_hero_data_list, lstm_cell_all_hero, lstm_hidden_all_hero, only_inference=True):
+    def _inference(self, each_hero_data_list, only_inference=True):
         # split states
+        lstm_cell_all_hero = self.lstm_cell_ph
+        lstm_hidden_all_hero = self.lstm_hidden_ph
         whole_feature_list = State_splitter().split_features(each_hero_data_list)
         # feature extraction
         extracted_feature = Feature_extraction().get_extracted_feature(whole_feature_list)
