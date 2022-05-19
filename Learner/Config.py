@@ -42,6 +42,8 @@ class Config:
     states_names=['FeatureImgLikeMg','VecFeatureHero','MainHeroFeature','VecSoldier','VecOrgan','VecMonster','VecCampsWholeInfo']
 
     vec_feat_extract_out_dims=[16,16,16,16,16,16] 
-
+    EMBEDDING_DIM = 16
 
     score_fc_weight_initializer=tf.orthogonal_initializer()
+    action_fc_weight_initializer = tf.orthogonal_initializer()
+    action_embedding_weight_initializer = tf.orthogonal_initializer()
