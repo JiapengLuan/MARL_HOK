@@ -178,76 +178,7 @@ class NetworkModel():
             extracted_feature, lstm_cell_all_hero, lstm_hidden_all_hero)
         # Communications
         Comm_out = Communication().COMM_inference(hidden_out)
-
-        hero_fc1_weight_list = []
-        hero_fc1_bias_list = []
-        hero_fc1_weight_add_list = []
-        hero_fc1_bias_add_list = []
-        hero_fc2_weight_list = []
-        hero_fc2_bias_list = []
-        feature_data_list = []
-        for hero_index in range(len(each_hero_data_list)):
-            feature_data_list.append(tf.identity(
-                each_hero_data_list[hero_index][0], name="hero%d_feature" % (hero_index)))
-            hero_fc1_weight_list.append(self._fc_weight_variable(
-                shape=[4586, 64], name="fc1_hero%d_main_weight" % (hero_index)))
-            hero_fc1_bias_list.append(self._bias_variable(
-                shape=[64], name="fc1_hero%d_main_bias" % (hero_index)))
-
-            hero_fc1_weight_add_list.append(self._fc_weight_variable(
-                shape=[64, 64], name="fc1_hero%d_main_weight_add" % (hero_index)))
-            hero_fc1_bias_add_list.append(self._bias_variable(
-                shape=[64], name="fc1_hero%d_main_bias_add" % (hero_index)))
-
-            hero_fc2_weight_list.append(self._fc_weight_variable(
-                shape=[64, 64], name="fc2_hero%d_main_weight" % (hero_index)))
-            hero_fc2_bias_list.append(self._bias_variable(
-                shape=[64], name="fc2_hero%d_main_bias" % (hero_index)))
-
-        hero_fc1_result_list = []
-        hero_fc1_result_add_list = []
-        hero_fc2_result_list = []
-        for hero_index in range(len(each_hero_data_list)):
-            hero_fc1_result_list.append(tf.nn.relu((tf.matmul(
-                feature_data_list[hero_index], hero_fc1_weight_list[hero_index]) + hero_fc1_bias_list[hero_index]), name="hero%d_fc1_result" % (hero_index)))
-            hero_fc1_result_add_list.append(tf.nn.relu((tf.matmul(
-                hero_fc1_result_list[hero_index], hero_fc1_weight_add_list[hero_index]) + hero_fc1_bias_add_list[hero_index]), name="hero%d_fc1_result_add" % (hero_index)))
-            hero_fc2_result_list.append(tf.nn.relu((tf.matmul(
-                hero_fc1_result_add_list[hero_index], hero_fc2_weight_list[hero_index]) + hero_fc2_bias_list[hero_index]), name="hero%d_fc2_result" % (hero_index)))
-
-        hero_fc1_label_weight_list = []
-        hero_fc1_label_bias_list = []
-        hero_fc1_value_weight_list = []
-        hero_fc1_value_bias_list = []
-        for hero_index in range(len(each_hero_data_list)):
-            fc1_label_weight_list = []
-            fc1_label_bias_list = []
-            for label_index in range(len(self.hero_label_size_list[hero_index])):
-                fc1_label_weight_list.append(self._fc_weight_variable(
-                    shape=[64, self.hero_label_size_list[hero_index][label_index]], name="hero%d_fc1_label_%d_weight" % (hero_index, label_index)))
-                fc1_label_bias_list.append(self._bias_variable(
-                    shape=[self.hero_label_size_list[hero_index][label_index]], name="hero%d_fc1_label_%d_bias" % (hero_index, label_index)))
-
-            hero_fc1_label_weight_list.append(fc1_label_weight_list)
-            hero_fc1_label_bias_list.append(fc1_label_bias_list)
-            # value fc para
-            hero_fc1_value_weight_list.append(self._fc_weight_variable(
-                shape=[64, 1], name="hero%d_fc1_value_weight" % (hero_index)))
-            hero_fc1_value_bias_list.append(self._bias_variable(
-                shape=[1], name="hero%d_fc1_value_bias" % (hero_index)))
-
-        each_hero_fc_result_list = []
-        for hero_index in range(len(each_hero_data_list)):
-            this_hero_fc_result_list = []
-            this_hero_variable_list = []
-            for label_index in range(len(self.hero_label_size_list[hero_index])):
-                this_hero_fc_result_list.append(tf.add(tf.matmul(hero_fc2_result_list[hero_index], hero_fc1_label_weight_list[hero_index][
-                                                label_index]), hero_fc1_label_bias_list[hero_index][label_index], name="hero%d_fc1_label_%d_result" % (hero_index, label_index)))
-
-            this_hero_fc_result_list.append(tf.add(tf.matmul(
-                hero_fc2_result_list[hero_index], hero_fc1_value_weight_list[hero_index]), hero_fc1_value_bias_list[hero_index], name="hero%d_fc1_value_result" % hero_index))
-
-            each_hero_fc_result_list.append(this_hero_fc_result_list)
+        each_hero_fc_result_list = ActionChooser().Action_inference(Comm_out)
 
         return each_hero_fc_result_list
 
@@ -734,3 +665,110 @@ class Communication():
 
     def COMM_inference(self, input_feature_ah):
         return self._attention(input_feature_ah)
+
+class ActionChooser():
+    def __init__(self):
+        self.reuse = Config.reuse
+        self.action_fc_weight_initializer = Config.action_fc_weight_initializer
+        self.action_embedding_weight_initializer = Config.action_embedding_weight_initializer
+        self.button_num = Config.HERO_LABEL_SIZE_LIST[0][0]
+        self.move_num = Config.HERO_LABEL_SIZE_LIST[0][1]
+        self.offset_x_num = Config.HERO_LABEL_SIZE_LIST[0][2]
+        self.offset_z_num = Config.HERO_LABEL_SIZE_LIST[0][3]
+        self.target_num = Config.HERO_LABEL_SIZE_LIST[0][4]
+
+    def _fc_weight_variable(self, shape, name, trainable=True):
+        return tf.get_variable(name, shape=shape, initializer=self.action_fc_weight_initializer, trainable=trainable)
+
+    def _embedding_weight_variable(self, shape, name, trainable=True):
+        return tf.get_variable(name, shape=shape, initializer=self.action_embedding_weight_initializer, trainable=trainable)
+    
+    def _inference(self, input_feature_ah):
+        with tf.variable_scope('ActionChooser', reuse=self.reuse):
+            each_hero_action_list = []
+            for hero in range(len(input_feature_ah)):
+                input_feature_ph = input_feature_ah[hero]
+                #import pdb
+                #pdb.set_trace()
+                move_choice, offset_x_choice, offset_z_choice, target_choice = [np.array([-1 for i in range(input_feature_ph.get_shape().as_list()[0])]) for j in range(4)]
+                
+                # Button choose begin
+                # button_fc_shape = [batch_size, EMBEDDING_DIM]
+                # button_embedding_weight_shape = [EMBEDDING_DIM, button_num]
+                # button_embedding_shape = [batch_size, button_num]
+                # button_choice_shape = [batch_size]
+                button_fc_weight = self._fc_weight_variable(
+                    shape=[input_feature_ph.get_shape().as_list()[-1], Config.EMBEDDING_DIM], name=f"hero{hero}_Button_fc_weight")
+                button_embedding_weight = self._embedding_weight_variable(
+                    shape=[Config.EMBEDDING_DIM, self.button_num], name=f"hero{hero}_Button_embedding_weight")
+                button_fc = tf.matmul(input_feature_ph, button_fc_weight)
+                button_embedding = tf.matmul(button_fc, button_embedding_weight)
+                button_embedding = tf.nn.softmax(button_embedding, axis=-1)
+                button_choice = tf.argmax(button_embedding, axis=-1)
+                # Button choose end
+
+                if button_choice in [3, 4, 5, 6, 10, 12]:
+                    # Target choose begin
+                    # button_choice_embedding_shape = [batch_size, EMBEDDING_DIM]
+                    # target_embedding_weight_shape = [EMBEDDING_DIM, target_num]
+                    # button_target_embedding_weight_shape = [batch_size, EMBEDDING_DIM, target_num]
+                    # target_embedding_shape = [batch_size, self.target_num]
+                    # target_fc_shape = [batch_size, EMBEDDING_DIM]
+                    button_choice_embedding = tf.nn.embedding_lookup(
+                        tf.transpose(button_embedding_weight, [1, 0]), button_choice)
+                    target_embedding_weight = self._embedding_weight_variable(
+                        shape=[Config.EMBEDDING_DIM, self.target_num], name=f"hero{hero}_Target_embedding_weight")
+                    button_target_embedding_weight = tf.expand_dims(button_choice_embedding, axis=-1) * target_embedding_weight
+                    target_fc_weight = self._fc_weight_variable(
+                        shape=[input_feature_ph.get_shape().as_list()[-1], Config.EMBEDDING_DIM], name=f"hero{hero}_Target_fc_weight")
+                    target_fc = tf.matmul(input_feature_ph, target_fc_weight)
+                    target_embedding = tf.matmul(tf.expand_dims(target_fc, axis=1), button_target_embedding_weight)
+                    target_embedding = tf.squeeze(target_embedding, axis=1)
+                    target_embedding = tf.nn.softmax(target_embedding, axis=-1)
+                    target_choice = tf.argmax(target_embedding, axis=-1)
+                    # Target choose end
+
+                if button_choice in [2]:
+                    # Move choose begin
+                    # move_choice_shape = [batch_size]
+                    move_fc_weight = self._fc_weight_variable(
+                        shape=[input_feature_ph.get_shape().as_list()[-1], self.move_num], name=f"hero{hero}_Move_fc_weight")
+                    move_fc = tf.matmul(input_feature_ph, move_fc_weight)
+                    move_fc = tf.nn.softmax(move_fc, axis=-1)
+                    move_choice = tf.argmax(move_fc, axis=-1)
+                    # Move choose end
+
+                if button_choice in [4,5,6]:
+                    # Offset choose begin
+                    # offset_x_choice_shape = [batch_size]
+                    # offset_z_choice_shape = [batch_size]
+                    offset_x_fc_weight = self._fc_weight_variable(
+                        shape=[input_feature_ph.get_shape().as_list()[-1], self.offset_x_num], name=f"hero{hero}_Offset_x_fc_weight")
+                    offset_x_fc = tf.matmul(input_feature_ph, offset_x_fc_weight)
+                    offset_x_fc = tf.nn.softmax(offset_x_fc, axis=-1)
+                    offset_x_choice = tf.argmax(offset_x_fc, axis=-1)
+                    offset_z_fc_weight = self._fc_weight_variable(
+                        shape=[input_feature_ph.get_shape().as_list()[-1], self.offset_z_num], name=f"hero{hero}_Offset_z_fc_weight")
+                    offset_z_fc = tf.matmul(input_feature_ph, offset_z_fc_weight)
+                    offset_z_fc = tf.nn.softmax(offset_z_fc, axis=-1)
+                    offset_z_choice = tf.argmax(offset_z_fc, axis=-1)
+                    # Offset choose end
+
+                # Network value
+                network_value_fc_weight = self._fc_weight_variable(
+                    shape=[input_feature_ph.get_shape().as_list()[-1], 1], name=f"hero{hero}_Network_value_fc_weight")
+                network_value = tf.matmul(input_feature_ph, network_value_fc_weight)
+
+                each_hero_action_list.append(tf.concat([
+                    tf.one_hot(button_choice, self.button_num),
+                    tf.one_hot(move_choice, self.move_num),
+                    tf.one_hot(offset_x_choice, self.offset_x_num),
+                    tf.one_hot(offset_z_choice, self.offset_z_num),
+                    tf.one_hot(target_choice, self.target_num),
+                    network_value], axis=-1))
+            return each_hero_action_list
+
+
+
+    def Action_inference(self, input_feature_ah):
+        return self._inference(input_feature_ah)

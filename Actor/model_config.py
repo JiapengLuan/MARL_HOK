@@ -1,5 +1,4 @@
 # -*- coding:utf-8 -*-
-import tensorflow as tf
 
 class ModelConfig:
     HERO_NUM = 3
@@ -35,7 +34,7 @@ class ModelConfig:
     TASK_ID = 16980
     TASK_UUID = "10ad0318-893f-4426-ac8e-44f109561350"
     data_shapes = [[sum(HERO_DATA_SPLIT_SHAPE[0])*LSTM_TIME_STEPS + LSTM_UNIT_SIZE*2]] * 3
-
+    
     import tensorflow as tf
     BN_EPSILON=0.001
     resnet_FeatureImgLikeMg_n=2 #num of residual blocks used for FeatureImgLike per hero
@@ -43,6 +42,8 @@ class ModelConfig:
     states_names=['FeatureImgLikeMg','VecFeatureHero','MainHeroFeature','VecSoldier','VecOrgan','VecMonster','VecCampsWholeInfo']
 
     vec_feat_extract_out_dims=[16,16,16,16,16,16] 
-
+    EMBEDDING_DIM = 16
 
     score_fc_weight_initializer=tf.orthogonal_initializer()
+    action_fc_weight_initializer = tf.orthogonal_initializer()
+    action_embedding_weight_initializer = tf.orthogonal_initializer()
