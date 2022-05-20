@@ -110,10 +110,16 @@ class Model():
 
         # new add 20180912
         each_hero_data_list = []
+        each_hero_lstm_cell = []
+        each_hero_lstm_hidden = []
         for hero_index in range(self.hero_num):
-            this_hero_data_list = self._split_data(tf.cast(
-                data_list[hero_index], tf.float32), self.hero_data_split_shape[hero_index])
+            this_hero_data_list, this_hero_lstm_cell, this_hero_lstm_hidden = self._split_data(
+                tf.cast(data_list[hero_index], tf.float32), self.hero_data_split_shape[hero_index])
             each_hero_data_list.append(this_hero_data_list)
+            each_hero_lstm_cell.append(this_hero_lstm_cell)
+            each_hero_lstm_hidden.append(this_hero_lstm_hidden)
+        self.lstm_cell_ah = each_hero_lstm_cell
+        self.lstm_hidden_ah = each_hero_lstm_hidden
         # build network
         each_hero_fc_result_list = self._inference(each_hero_data_list)
         # calculate loss
@@ -126,25 +132,12 @@ class Model():
     def get_optimizer(self):
         return tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=0.00001)
 
-    def _split_inference_data(self, hero_data_list):
-        # new add 20180912
-        each_hero_data_list = []
-        for hero_index in range(self.hero_num):
-            this_hero_data = []
-            data_feature = tf.cast(hero_data_list[hero_index], tf.float32)
-            print(data_feature.shape)
-            print(self.hero_data_split_shape[hero_index][0])
-            feature = tf.reshape(
-                data_feature, [-1, self.hero_data_split_shape[hero_index][0]])
-            this_hero_data.append(feature)
-            each_hero_data_list.append(this_hero_data)
-
-        return each_hero_data_list
-
     def _split_data(self, this_hero_data, this_hero_data_split_shape):
         # calculate length of each frame
         this_hero_each_frame_data_length = np.sum(
             np.array(this_hero_data_split_shape))
+        # TODO: LSTM unit size should increase
+        # TODO: should have lstm_time_steps numbner of LSTMcell?
         this_hero_sequence_data_length = this_hero_each_frame_data_length * self.lstm_time_steps
         this_hero_sequence_data_split_shape = np.array(
             [this_hero_sequence_data_length, self.lstm_unit_size, self.lstm_unit_size])
@@ -154,9 +147,9 @@ class Model():
             sequence_data, [-1, this_hero_each_frame_data_length])
         sequence_this_hero_data_list = tf.split(
             reshape_sequence_data, np.array(this_hero_data_split_shape), axis=1)
-        self.lstm_cell_ph = lstm_cell_data
-        self.lstm_hidden_ph = lstm_hidden_data
-        return sequence_this_hero_data_list
+        # self.lstm_cell_ph = lstm_cell_data
+        # self.lstm_hidden_ph = lstm_hidden_data
+        return sequence_this_hero_data_list, lstm_cell_data, lstm_hidden_data
 
     def _calculate_loss(self, each_hero_data_list, each_hero_fc_result_list):
         self.cost_all = tf.constant(0.0, dtype=tf.float32)
@@ -284,8 +277,8 @@ class Model():
 
     def _inference(self, each_hero_data_list, only_inference=True):
         # split states
-        lstm_cell_all_hero = self.lstm_cell_ph
-        lstm_hidden_all_hero = self.lstm_hidden_ph
+        lstm_cell_all_hero = self.lstm_cell_ah
+        lstm_hidden_all_hero = self.lstm_hidden_ah
         whole_feature_list = State_splitter().split_features(each_hero_data_list)
         # feature extraction
         extracted_feature = Feature_extraction().get_extracted_feature(whole_feature_list)
@@ -295,9 +288,9 @@ class Model():
             extracted_feature, lstm_cell_all_hero, lstm_hidden_all_hero)
         # Communications
         Comm_out = Communication().COMM_inference(hidden_out)
-        each_hero_fc_result_list = ActionChooser().Action_inference(Comm_out)
+        each_hero_action_list = ActionChooser().Action_inference(Comm_out)
 
-        return each_hero_fc_result_list
+        return each_hero_action_list
 
     def _conv_weight_variable(self, shape, name, trainable=True):
         #initializer = tf.contrib.layers.xavier_initializer_conv2d()
@@ -407,7 +400,7 @@ class Feature_extraction():
         '''
         input_dim = input_layer.get_shape().as_list()[-1]
         fc_w = self.create_variables(name='fc_weights', shape=[input_dim, num_labels], is_fc_layer=True,
-                                     initializer=tf.uniform_unit_scaling_initializer(factor=1.0))
+                                     initializer=Config.vecNet_fc_initializer)
         fc_b = self.create_variables(name='fc_bias', shape=[
             num_labels], initializer=tf.zeros_initializer())
 
@@ -424,12 +417,13 @@ class Feature_extraction():
         input_dims = input_vec.get_shape().as_list()[-1]
         input_dims_num = len(input_vec.get_shape().as_list())
         fc_w = self.create_variables(name='fc_weights', shape=[input_dims, output_dims], is_fc_layer=True,
-                                     initializer=tf.uniform_unit_scaling_initializer(factor=1.0))
+                                     initializer=Config.vecNet_fc_initializer)
         fc_b = self.create_variables(name='fc_bias', shape=[
             output_dims], initializer=tf.zeros_initializer())
+        # if len(input_vec.get_shape().as_list())==1:
         input_vec = tf.expand_dims(input_vec, 0)
         fc_h = tf.matmul(input_vec, fc_w) + fc_b
-        return fc_h
+        return tf.squeeze(fc_h)
 
     def bn_relu_fc_layer(self, input_layer, output_dims):
         '''
@@ -449,10 +443,10 @@ class Feature_extraction():
             input_layer, mean, variance, beta, gamma, Config.BN_EPSILON)
 
         relu_layer = tf.nn.relu(bn_layer)
-        fc_layer = self.fc_layer(relu_layer, output_dims)
+        output = self.fc_layer(relu_layer, output_dims)
         return output
 
-    def fc_bn_relu_layer(self, input_layer, output_dims):
+    def fc_bn_relu_layer(self, input_layer, output_dims,if_bn):
         '''
         A helper function to  fc, batch normalize, relu  the input tensor sequentially
         :param input_layer: 1D tensor
@@ -462,19 +456,23 @@ class Feature_extraction():
 
         # bn part
         fc_layer = self.fc_layer(input_layer, output_dims)
-        mean, variance = tf.nn.moments(fc_layer, axes=[0])
-        beta = tf.get_variable('beta', 1, tf.float32,
-                               initializer=tf.constant_initializer(0.0, tf.float32))
-        gamma = tf.get_variable('gamma', 1, tf.float32,
-                                initializer=tf.constant_initializer(1.0, tf.float32))
-        bn_layer = tf.nn.batch_normalization(
-            fc_layer, mean, variance, beta, gamma, Config.BN_EPSILON)
 
-        relu_layer = tf.nn.relu(bn_layer)
+        if if_bn:
+            mean, variance = tf.nn.moments(fc_layer, axes=[0])
+            beta = tf.get_variable('beta', 1, tf.float32,
+                                initializer=tf.constant_initializer(0.0, tf.float32))
+            gamma = tf.get_variable('gamma', 1, tf.float32,
+                                    initializer=tf.constant_initializer(1.0, tf.float32))
+            bn_layer = tf.nn.batch_normalization(
+                fc_layer, mean, variance, beta, gamma, Config.BN_EPSILON)
+
+            relu_layer = tf.nn.relu(bn_layer)
+        else:
+            relu_layer=tf.nn.relu(fc_layer)
 
         return relu_layer
 
-    def res_fc_block(self, input_layer, output_dims):
+    def res_fc_block(self, input_layer, output_dims,num_vec_fc_in_resblock=Config.num_vec_fc_in_resblock):
         '''
         res_fc_block (unfinished)
         '''
@@ -484,15 +482,25 @@ class Feature_extraction():
             if_change_dim = True
         else:
             if_change_dim = False
-        fc_layer = bn_relu_fc_layer(self, input_layer, output_dims)
 
-        ksize_pool = input_dim//output_dims+1
-        if increase_dim is True:
-            pooled_input = tf.nn.avg_pool(input_layer, ksize=[ksize_pool],
-                                          strides=[ksize_pool], padding='SAME')
-            # padded_input = tf.pad(pooled_input, [[0, 0], [0, 0], [0, 0], [input_channel // 2,
-            #                                                               input_channel // 2]])
-        return padded_input
+        
+        with tf.variable_scope('fc1_in_resblock'):
+            fc_layer1 = self.bn_relu_fc_layer(input_layer, output_dims)
+            fc_layer_out=fc_layer1
+        if num_vec_fc_in_resblock==2:
+            with tf.variable_scope('fc2_in_resblock'):
+                fc_layer2=self.bn_relu_fc_layer(fc_layer1, output_dims)
+                fc_layer_out=fc_layer2
+        # if not is_change_dim is True:
+        resoutput=input_layer+fc_layer_out
+        
+        # pad_dim = (input_dim-output_dims)
+        # if if_change_dim is True:
+        #     # pooled_input = tf.nn.avg_pool(input_layer, ksize=[ksize_pool],
+        #     #                               strides=[ksize_pool], padding='SAME')
+        #     pad_input = tf.pad(input_layer, [[0,pad_dim]])
+        #     resoutput=pad_input+
+        return resoutput
 
     def batch_normalization_layer(self, input_layer, dimension):
         '''
@@ -649,6 +657,19 @@ class Feature_extraction():
 
         return layers[-1]
 
+
+    def vec_fc_first_layer(self, input_layer,output_dims,if_bn):
+        return self.fc_bn_relu_layer(input_layer, output_dims,if_bn)
+
+
+    def vec_fc_second_layer(self, input_layer,output_dims,vec_fc_2ndlayer_type='resfc',if_bn=True):
+        if vec_fc_2ndlayer_type=='resfc':
+            output_layer=self.res_fc_block(input_layer, output_dims)
+        if vec_fc_2ndlayer_type=='fc':
+            output_layer=self.fc_bn_relu_layer(input_layer, output_dims,if_bn)
+        return output_layer
+
+
     def vec_feature_extraction(self, vec_state_list):
         input_dim_list = [vec_state.get_shape().as_list()[-1]
                           for vec_state in vec_state_list]
@@ -665,8 +686,17 @@ class Feature_extraction():
             for j in range(num_unit_perState_list[i]):
                 with tf.variable_scope(state_name+f'_{j}', reuse=self.reuse):
                     input_layer = vec_state_list[i][0][j]
-                    this_unit_feature_list.append(self.fc_bn_relu_layer(
-                        input_layer, Config.vec_feat_extract_out_dims[i]))
+                    output_dims_fc1=Config.vec_feat_extract_out_dims[0][i]
+                    output_dims_fc2=Config.vec_feat_extract_out_dims[1][i]
+
+                    with tf.variable_scope('vec_fc_1', reuse=self.reuse):
+                        fc1=self.vec_fc_first_layer(input_layer,output_dims_fc1,Config.if_vec_fc_bn)
+
+                    with tf.variable_scope('vec_fc_2', reuse=self.reuse):
+                        fc2=self.vec_fc_second_layer(fc1, output_dims_fc2, Config.vec_fc_2ndlayer_type, if_bn=Config.if_vec_fc_bn)
+
+                this_unit_feature_list.append(tf.expand_dims(fc2,0))
+
             output_vec_feature_list.append(this_unit_feature_list)
 
         return output_vec_feature_list
@@ -715,6 +745,9 @@ class LSTM():
         # lstm_input: [batch_size, input_size]
         # cell_ph: [batch_size, self.lstm_hidden_dim]
         # hidden_ph: [batch_size, self.lstm_hidden_dim]
+        print('lstm_input', lstm_input.get_shape().as_list())
+        print('cell_ph', cell_ph.get_shape().as_list())
+        print('hidden_ph', hidden_ph.get_shape().as_list())
         hidden_out, out = self.lstm_cell(lstm_input, [cell_ph, hidden_ph])
         cell_out = out[0]
 
@@ -779,6 +812,7 @@ class Communication():
     def COMM_inference(self, input_feature_ah):
         return self._attention(input_feature_ah)
 
+
 class ActionChooser():
     def __init__(self):
         self.reuse = Config.reuse
@@ -795,7 +829,7 @@ class ActionChooser():
 
     def _embedding_weight_variable(self, shape, name, trainable=True):
         return tf.get_variable(name, shape=shape, initializer=self.action_embedding_weight_initializer, trainable=trainable)
-    
+
     def _inference(self, input_feature_ah):
         with tf.variable_scope('ActionChooser', reuse=self.reuse):
             each_hero_action_list = []
@@ -803,8 +837,7 @@ class ActionChooser():
                 input_feature_ph = input_feature_ah[hero]
                 #import pdb
                 #pdb.set_trace()
-                move_choice, offset_x_choice, offset_z_choice, target_choice = [np.array([-1 for i in range(input_feature_ph.get_shape().as_list()[0])]) for j in range(4)]
-                
+
                 # Button choose begin
                 # button_fc_shape = [batch_size, EMBEDDING_DIM]
                 # button_embedding_weight_shape = [EMBEDDING_DIM, button_num]
@@ -815,73 +848,74 @@ class ActionChooser():
                 button_embedding_weight = self._embedding_weight_variable(
                     shape=[Config.EMBEDDING_DIM, self.button_num], name=f"hero{hero}_Button_embedding_weight")
                 button_fc = tf.matmul(input_feature_ph, button_fc_weight)
-                button_embedding = tf.matmul(button_fc, button_embedding_weight)
+                button_embedding = tf.matmul(
+                    button_fc, button_embedding_weight)
                 button_embedding = tf.nn.softmax(button_embedding, axis=-1)
                 button_choice = tf.argmax(button_embedding, axis=-1)
                 # Button choose end
 
-                if button_choice in [3, 4, 5, 6, 10, 12]:
-                    # Target choose begin
-                    # button_choice_embedding_shape = [batch_size, EMBEDDING_DIM]
-                    # target_embedding_weight_shape = [EMBEDDING_DIM, target_num]
-                    # button_target_embedding_weight_shape = [batch_size, EMBEDDING_DIM, target_num]
-                    # target_embedding_shape = [batch_size, self.target_num]
-                    # target_fc_shape = [batch_size, EMBEDDING_DIM]
-                    button_choice_embedding = tf.nn.embedding_lookup(
-                        tf.transpose(button_embedding_weight, [1, 0]), button_choice)
-                    target_embedding_weight = self._embedding_weight_variable(
-                        shape=[Config.EMBEDDING_DIM, self.target_num], name=f"hero{hero}_Target_embedding_weight")
-                    button_target_embedding_weight = tf.expand_dims(button_choice_embedding, axis=-1) * target_embedding_weight
-                    target_fc_weight = self._fc_weight_variable(
-                        shape=[input_feature_ph.get_shape().as_list()[-1], Config.EMBEDDING_DIM], name=f"hero{hero}_Target_fc_weight")
-                    target_fc = tf.matmul(input_feature_ph, target_fc_weight)
-                    target_embedding = tf.matmul(tf.expand_dims(target_fc, axis=1), button_target_embedding_weight)
-                    target_embedding = tf.squeeze(target_embedding, axis=1)
-                    target_embedding = tf.nn.softmax(target_embedding, axis=-1)
-                    target_choice = tf.argmax(target_embedding, axis=-1)
-                    # Target choose end
+                # Target choose begin
+                # button_choice_embedding_shape = [batch_size, EMBEDDING_DIM]
+                # target_embedding_weight_shape = [EMBEDDING_DIM, target_num]
+                # button_target_embedding_weight_shape = [batch_size, EMBEDDING_DIM, target_num]
+                # target_embedding_shape = [batch_size, self.target_num]
+                # target_fc_shape = [batch_size, EMBEDDING_DIM]
+                button_choice_embedding = tf.nn.embedding_lookup(
+                    tf.transpose(button_embedding_weight, [1, 0]), button_choice)
+                target_embedding_weight = self._embedding_weight_variable(
+                    shape=[Config.EMBEDDING_DIM, self.target_num], name=f"hero{hero}_Target_embedding_weight")
+                button_target_embedding_weight = tf.expand_dims(
+                    button_choice_embedding, axis=-1) * target_embedding_weight
+                target_fc_weight = self._fc_weight_variable(
+                    shape=[input_feature_ph.get_shape().as_list()[-1], Config.EMBEDDING_DIM], name=f"hero{hero}_Target_fc_weight")
+                target_fc = tf.matmul(input_feature_ph, target_fc_weight)
+                target_embedding = tf.matmul(tf.expand_dims(
+                    target_fc, axis=1), button_target_embedding_weight)
+                target_embedding = tf.squeeze(target_embedding, axis=1)
+                target_embedding = tf.nn.softmax(target_embedding, axis=-1)
+                target_choice = tf.argmax(target_embedding, axis=-1)
+                # Target choose end
 
-                if button_choice in [2]:
-                    # Move choose begin
-                    # move_choice_shape = [batch_size]
-                    move_fc_weight = self._fc_weight_variable(
-                        shape=[input_feature_ph.get_shape().as_list()[-1], self.move_num], name=f"hero{hero}_Move_fc_weight")
-                    move_fc = tf.matmul(input_feature_ph, move_fc_weight)
-                    move_fc = tf.nn.softmax(move_fc, axis=-1)
-                    move_choice = tf.argmax(move_fc, axis=-1)
-                    # Move choose end
+                # Move choose begin
+                # move_choice_shape = [batch_size]
+                move_fc_weight = self._fc_weight_variable(
+                    shape=[input_feature_ph.get_shape().as_list()[-1], self.move_num], name=f"hero{hero}_Move_fc_weight")
+                move_fc = tf.matmul(input_feature_ph, move_fc_weight)
+                move_fc = tf.nn.softmax(move_fc, axis=-1)
+                move_choice = tf.argmax(move_fc, axis=-1)
+                # Move choose end
 
-                if button_choice in [4,5,6]:
-                    # Offset choose begin
-                    # offset_x_choice_shape = [batch_size]
-                    # offset_z_choice_shape = [batch_size]
-                    offset_x_fc_weight = self._fc_weight_variable(
-                        shape=[input_feature_ph.get_shape().as_list()[-1], self.offset_x_num], name=f"hero{hero}_Offset_x_fc_weight")
-                    offset_x_fc = tf.matmul(input_feature_ph, offset_x_fc_weight)
-                    offset_x_fc = tf.nn.softmax(offset_x_fc, axis=-1)
-                    offset_x_choice = tf.argmax(offset_x_fc, axis=-1)
-                    offset_z_fc_weight = self._fc_weight_variable(
-                        shape=[input_feature_ph.get_shape().as_list()[-1], self.offset_z_num], name=f"hero{hero}_Offset_z_fc_weight")
-                    offset_z_fc = tf.matmul(input_feature_ph, offset_z_fc_weight)
-                    offset_z_fc = tf.nn.softmax(offset_z_fc, axis=-1)
-                    offset_z_choice = tf.argmax(offset_z_fc, axis=-1)
-                    # Offset choose end
+                # Offset choose begin
+                # offset_x_choice_shape = [batch_size]
+                # offset_z_choice_shape = [batch_size]
+                offset_x_fc_weight = self._fc_weight_variable(
+                    shape=[input_feature_ph.get_shape().as_list()[-1], self.offset_x_num], name=f"hero{hero}_Offset_x_fc_weight")
+                offset_x_fc = tf.matmul(
+                    input_feature_ph, offset_x_fc_weight)
+                offset_x_fc = tf.nn.softmax(offset_x_fc, axis=-1)
+                offset_x_choice = tf.argmax(offset_x_fc, axis=-1)
+                offset_z_fc_weight = self._fc_weight_variable(
+                    shape=[input_feature_ph.get_shape().as_list()[-1], self.offset_z_num], name=f"hero{hero}_Offset_z_fc_weight")
+                offset_z_fc = tf.matmul(
+                    input_feature_ph, offset_z_fc_weight)
+                offset_z_fc = tf.nn.softmax(offset_z_fc, axis=-1)
+                offset_z_choice = tf.argmax(offset_z_fc, axis=-1)
+                # Offset choose end
 
                 # Network value
                 network_value_fc_weight = self._fc_weight_variable(
                     shape=[input_feature_ph.get_shape().as_list()[-1], 1], name=f"hero{hero}_Network_value_fc_weight")
-                network_value = tf.matmul(input_feature_ph, network_value_fc_weight)
+                network_value = tf.matmul(
+                    input_feature_ph, network_value_fc_weight)
 
-                each_hero_action_list.append(tf.concat([
-                    tf.one_hot(button_choice, self.button_num),
-                    tf.one_hot(move_choice, self.move_num),
-                    tf.one_hot(offset_x_choice, self.offset_x_num),
-                    tf.one_hot(offset_z_choice, self.offset_z_num),
-                    tf.one_hot(target_choice, self.target_num),
-                    network_value], axis=-1))
+                each_hero_action_list.append([
+                    button_embedding,
+                    move_fc,
+                    offset_x_fc,
+                    offset_z_fc,
+                    target_embedding,
+                    network_value])
             return each_hero_action_list
-
-
 
     def Action_inference(self, input_feature_ah):
         return self._inference(input_feature_ah)
