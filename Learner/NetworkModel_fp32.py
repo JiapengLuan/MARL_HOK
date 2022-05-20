@@ -220,7 +220,7 @@ class NetworkModel():
         # Communications
         Comm_out = Communication().COMM_inference(hidden_out)
         each_hero_fc_result_list = ActionChooser().Action_inference(Comm_out)
-        
+
         return each_hero_fc_result_list
 
     def _conv_weight_variable(self, shape, name, trainable=True):
@@ -377,7 +377,7 @@ class Feature_extraction():
         output = self.fc_layer(relu_layer, output_dims)
         return output
 
-    def fc_bn_relu_layer(self, input_layer, output_dims,if_bn):
+    def fc_bn_relu_layer(self, input_layer, output_dims, if_bn):
         '''
         A helper function to  fc, batch normalize, relu  the input tensor sequentially
         :param input_layer: 1D tensor
@@ -391,7 +391,7 @@ class Feature_extraction():
         if if_bn:
             mean, variance = tf.nn.moments(fc_layer, axes=[0])
             beta = tf.get_variable('beta', 1, tf.float32,
-                                initializer=tf.constant_initializer(0.0, tf.float32))
+                                   initializer=tf.constant_initializer(0.0, tf.float32))
             gamma = tf.get_variable('gamma', 1, tf.float32,
                                     initializer=tf.constant_initializer(1.0, tf.float32))
             bn_layer = tf.nn.batch_normalization(
@@ -399,11 +399,11 @@ class Feature_extraction():
 
             relu_layer = tf.nn.relu(bn_layer)
         else:
-            relu_layer=tf.nn.relu(fc_layer)
+            relu_layer = tf.nn.relu(fc_layer)
 
         return relu_layer
 
-    def res_fc_block(self, input_layer, output_dims,num_vec_fc_in_resblock=Config.num_vec_fc_in_resblock):
+    def res_fc_block(self, input_layer, output_dims, num_vec_fc_in_resblock=Config.num_vec_fc_in_resblock):
         '''
         res_fc_block (unfinished)
         '''
@@ -414,17 +414,16 @@ class Feature_extraction():
         else:
             if_change_dim = False
 
-        
         with tf.variable_scope('fc1_in_resblock'):
             fc_layer1 = self.bn_relu_fc_layer(input_layer, output_dims)
-            fc_layer_out=fc_layer1
-        if num_vec_fc_in_resblock==2:
+            fc_layer_out = fc_layer1
+        if num_vec_fc_in_resblock == 2:
             with tf.variable_scope('fc2_in_resblock'):
-                fc_layer2=self.bn_relu_fc_layer(fc_layer1, output_dims)
-                fc_layer_out=fc_layer2
+                fc_layer2 = self.bn_relu_fc_layer(fc_layer1, output_dims)
+                fc_layer_out = fc_layer2
         # if not is_change_dim is True:
-        resoutput=input_layer+fc_layer_out
-        
+        resoutput = input_layer+fc_layer_out
+
         # pad_dim = (input_dim-output_dims)
         # if if_change_dim is True:
         #     # pooled_input = tf.nn.avg_pool(input_layer, ksize=[ksize_pool],
@@ -537,6 +536,25 @@ class Feature_extraction():
         output = conv2 + padded_input
         return output
 
+    def conv_2_inference(self, input_tensor_batch, reuse):
+        # conv_bn_relu_layer(self, input_layer, filter_shape, stride): filter_shape: list. [filter_height, filter_width, filter_depth, filter_number]
+        layers = []
+        with tf.variable_scope('imgconv_conv0', reuse=self.reuse):
+            conv0 = self.conv_bn_relu_layer(
+                input_tensor_batch, [7, 7, 6, 16], 1)
+            layers.append(conv0)
+        with tf.variable_scope('imgconv_maxpool', reuse=self.reuse):
+            pool_layer = tf.nn.max_pool(conv0, ksize=[1, 2, 2, 1], strides=[
+                                        1, 2, 2, 1], padding='SAME')
+            layers.append(pool_layer)
+        with tf.variable_scope('imgconv_conv1', reuse=self.reuse):
+            conv1 = self.conv_bn_relu_layer(
+                pool_layer, [3, 3, 16, 16], 2)
+            layers.append(conv1)
+        flat_dim = np.prod(layers[-1].get_shape().as_list()[1:])
+        outlayer = tf.reshape(layers[-1], [-1, flat_dim])
+        return outlayer
+
     def resnet_inference(self, input_tensor_batch, n, reuse):
         '''
         The main function that defines the ResNet. total layers = 1 + 2n + 2n + 2n +1 = 6n + 2
@@ -548,14 +566,14 @@ class Feature_extraction():
         '''
 
         layers = []
-        with tf.variable_scope('conv0', reuse=self.reuse):
+        with tf.variable_scope('imgres_conv0', reuse=self.reuse):
             conv0 = self.conv_bn_relu_layer(
                 input_tensor_batch, [7, 7, 6, 16], 1)
             # activation_summary(conv0)
             layers.append(conv0)
 
         for i in range(n):
-            with tf.variable_scope('conv1_%d' % i, reuse=self.reuse):
+            with tf.variable_scope('imgres_conv1_%d' % i, reuse=self.reuse):
                 if i == 0:
                     conv1 = self.residual_block(
                         layers[-1], 16, first_block=True)
@@ -565,13 +583,13 @@ class Feature_extraction():
                 layers.append(conv1)
 
         for i in range(n):
-            with tf.variable_scope('conv2_%d' % i, reuse=self.reuse):
+            with tf.variable_scope('imgres_conv2_%d' % i, reuse=self.reuse):
                 conv2 = self.residual_block(layers[-1], 32)
                 # activation_summary(conv2)
                 layers.append(conv2)
 
         for i in range(n):
-            with tf.variable_scope('conv3_%d' % i, reuse=self.reuse):
+            with tf.variable_scope('imgres_conv3_%d' % i, reuse=self.reuse):
                 conv3 = self.residual_block(layers[-1], 64)
                 layers.append(conv3)
             assert conv3.get_shape().as_list()[1:] == [5, 5, 64]
@@ -588,18 +606,16 @@ class Feature_extraction():
 
         return layers[-1]
 
+    def vec_fc_first_layer(self, input_layer, output_dims, if_bn):
+        return self.fc_bn_relu_layer(input_layer, output_dims, if_bn)
 
-    def vec_fc_first_layer(self, input_layer,output_dims,if_bn):
-        return self.fc_bn_relu_layer(input_layer, output_dims,if_bn)
-
-
-    def vec_fc_second_layer(self, input_layer,output_dims,vec_fc_2ndlayer_type='resfc',if_bn=True):
-        if vec_fc_2ndlayer_type=='resfc':
-            output_layer=self.res_fc_block(input_layer, output_dims)
-        if vec_fc_2ndlayer_type=='fc':
-            output_layer=self.fc_bn_relu_layer(input_layer, output_dims,if_bn)
+    def vec_fc_second_layer(self, input_layer, output_dims, vec_fc_2ndlayer_type='resfc', if_bn=True):
+        if vec_fc_2ndlayer_type == 'resfc':
+            output_layer = self.res_fc_block(input_layer, output_dims)
+        if vec_fc_2ndlayer_type == 'fc':
+            output_layer = self.fc_bn_relu_layer(
+                input_layer, output_dims, if_bn)
         return output_layer
-
 
     def vec_feature_extraction(self, vec_state_list):
         input_dim_list = [vec_state.get_shape().as_list()[-1]
@@ -617,28 +633,34 @@ class Feature_extraction():
             for j in range(num_unit_perState_list[i]):
                 with tf.variable_scope(state_name+f'_{j}', reuse=self.reuse):
                     input_layer = vec_state_list[i][0][j]
-                    output_dims_fc1=Config.vec_feat_extract_out_dims[0][i]
-                    output_dims_fc2=Config.vec_feat_extract_out_dims[1][i]
+                    output_dims_fc1 = Config.vec_feat_extract_out_dims[0][i]
+                    output_dims_fc2 = Config.vec_feat_extract_out_dims[1][i]
 
                     with tf.variable_scope('vec_fc_1', reuse=self.reuse):
-                        fc1=self.vec_fc_first_layer(input_layer,output_dims_fc1,Config.if_vec_fc_bn)
+                        fc1 = self.vec_fc_first_layer(
+                            input_layer, output_dims_fc1, Config.if_vec_fc_bn)
 
                     with tf.variable_scope('vec_fc_2', reuse=self.reuse):
-                        fc2=self.vec_fc_second_layer(fc1, output_dims_fc2, Config.vec_fc_2ndlayer_type, if_bn=Config.if_vec_fc_bn)
+                        fc2 = self.vec_fc_second_layer(
+                            fc1, output_dims_fc2, Config.vec_fc_2ndlayer_type, if_bn=Config.if_vec_fc_bn)
 
-                this_unit_feature_list.append(tf.expand_dims(fc2,0))
+                this_unit_feature_list.append(tf.expand_dims(fc2, 0))
 
             output_vec_feature_list.append(this_unit_feature_list)
 
         return output_vec_feature_list
 
-    def img_feature_extraction(self, input_tensor_batch, n, reuse):
+    def img_feature_extraction(self, input_tensor_batch, n, reuse, img_net_type):
         '''
         Main function for imglike feature extraction. input shape[1,17,17,6], output shape[64]
         :param: input_tensor_batch: input img like feature. Shape [1,17,17,6]([batch_size, IMG_HEIGHT, IMG_WIDTH, IMG_DEPTH])
         :param: n: num_residual_blocks
         '''
-        return self.resnet_inference(input_tensor_batch, n, reuse)
+        if img_net_type == 'img_res':
+            output = self.resnet_inference(input_tensor_batch, n, reuse)
+        if img_net_type == 'img_conv':
+            output = self.conv_2_inference(input_tensor_batch, reuse)
+        return output
 
     def get_extracted_feature(self, whole_feature_list):
         extracted_feature_all_heros = []
@@ -646,7 +668,7 @@ class Feature_extraction():
             with tf.variable_scope('hero'+f'_{i}', reuse=self.reuse):
                 n = Config.resnet_FeatureImgLikeMg_n
                 img_feature_extracted = [self.img_feature_extraction(
-                    each_hero_feature[0], n, self.reuse)]
+                    each_hero_feature[0], Config.img_num_res_blocks, self.reuse, Config.img_net_type)]
                 vec_feature_extracted_list = self.vec_feature_extraction(
                     each_hero_feature[1:])
                 vec_feature_extracted_list_flatten = []
@@ -767,7 +789,7 @@ class ActionChooser():
             for hero in range(len(input_feature_ah)):
                 input_feature_ph = input_feature_ah[hero]
                 #import pdb
-                #pdb.set_trace()
+                # pdb.set_trace()
 
                 # Button choose begin
                 # button_fc_shape = [batch_size, EMBEDDING_DIM]

@@ -41,6 +41,9 @@ class Config:
     reuse = tf.compat.v1.AUTO_REUSE #REUSE parameter for tf.variable_scope()
     states_names=['FeatureImgLikeMg','VecFeatureHero','MainHeroFeature','VecSoldier','VecOrgan','VecMonster','VecCampsWholeInfo']
 
+
+    img_num_res_blocks=1
+    img_net_type='img_res'#'img_conv' or 'img_res'
     vec_feat_extract_out_dims=[[16,16,16,16,16,16],  #[[1st fc],[2nd fc]]
                                 [16,16,16,16,16,16]]
     vec_fc_2ndlayer_type='resfc'#'resfc' or 'fc' 
