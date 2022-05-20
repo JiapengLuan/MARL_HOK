@@ -1,7 +1,7 @@
 class Config:
     NETWORK_NAME = "network"
     LSTM_TIME_STEPS = 16 # lstm step
-    LSTM_UNIT_SIZE = 16 # lstm cell and hidden state size
+    LSTM_UNIT_SIZE = 512 # lstm cell and hidden state size
     HERO_DATA_SPLIT_SHAPE = [
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
@@ -41,7 +41,13 @@ class Config:
     reuse = tf.compat.v1.AUTO_REUSE #REUSE parameter for tf.variable_scope()
     states_names=['FeatureImgLikeMg','VecFeatureHero','MainHeroFeature','VecSoldier','VecOrgan','VecMonster','VecCampsWholeInfo']
 
-    vec_feat_extract_out_dims=[16,16,16,16,16,16] 
+    vec_feat_extract_out_dims=[[16,16,16,16,16,16],  #[[1st fc],[2nd fc]]
+                                [16,16,16,16,16,16]]
+    vec_fc_2ndlayer_type='resfc'#'resfc' or 'fc' 
+    if_vec_fc_bn=True #Should vec 2 fc layers contain bn layer? When 2nd layer is 'resfc', this had better be True; when 2nd layer is 'fc', we can try True or False
+    num_vec_fc_in_resblock=1 
+    vecNet_fc_initializer=tf.orthogonal_initializer()
+    
     EMBEDDING_DIM = 16
 
     score_fc_weight_initializer=tf.orthogonal_initializer()
