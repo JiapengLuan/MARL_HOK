@@ -3,7 +3,7 @@
 class ModelConfig:
     HERO_NUM = 3
     LSTM_TIME_STEPS = 16
-    LSTM_UNIT_SIZE = 128
+    LSTM_UNIT_SIZE = 512
     HERO_DATA_SPLIT_SHAPE = [
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],

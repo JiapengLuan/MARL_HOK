@@ -1,0 +1,57 @@
+team_spirit=0.2
+whether_use_zero_sum_reward=1
+time_scaling_discount=0.6
+time_scaling_time=4500
+
+# tower reward conf
+middle_first_tower_weight=0.6
+middle_high_tower_weight=1.1
+crystal_weight=2.5
+
+# liyuanfang, sunshangxiang
+<hero_adc_reward>
+    hero_place:adc;
+    hp_rate_sqrt_sqrt:1.0;
+    money:0.003;
+    exp:0.002;
+    tower:0.02;
+    killCnt:1.5;
+    deadCnt:-1;
+    assistCnt:1;
+    total_hurt_to_hero:0.8;
+    atk_monster:0.1;
+    win_crystal:6;
+    atk_crystal:0.01;
+</hero_adc_reward>
+
+# diaochan, zhugeliang
+<hero_mid_reward>
+    hero_place:mid;
+    hp_rate_sqrt_sqrt:1.0;
+    money:0.003;
+    exp:0.002;
+    tower:0.02;
+    killCnt:1;
+    deadCnt:-1.5;
+    assistCnt:1;
+    total_hurt_to_hero:0.2;
+    atk_monster:0.1;
+    win_crystal:6;
+    atk_crystal:0.01;
+</hero_mid_reward>
+
+# zhaoyun, zhongwuyan
+<hero_jun_reward>
+    hero_place:jun;
+    hp_rate_sqrt_sqrt:1.0;
+    money:0.003;
+    exp:0.002;
+    tower:0.05;
+    killCnt:1;
+    deadCnt:-1;
+    assistCnt:1;
+    total_hurt_to_hero:0.3;
+    atk_monster:0.5;
+    win_crystal:6;
+    atk_crystal:0.01;
+</hero_jun_reward>

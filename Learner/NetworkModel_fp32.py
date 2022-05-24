@@ -75,14 +75,26 @@ class NetworkModel():
         sequence_data, lstm_cell_data, lstm_hidden_data = tf.split(
             this_hero_data, this_hero_sequence_data_split_shape, axis=1)
         reshape_sequence_data = tf.reshape(
-            sequence_data, [-1, this_hero_each_frame_data_length])
+            sequence_data, [-1, self.lstm_time_steps, this_hero_each_frame_data_length])
         sequence_this_hero_data_list = tf.split(
-            reshape_sequence_data, np.array(this_hero_data_split_shape), axis=1)
+            reshape_sequence_data, np.array(this_hero_data_split_shape), axis=2)
         # self.lstm_cell_ph = lstm_cell_data
         # self.lstm_hidden_ph = lstm_hidden_data
         return sequence_this_hero_data_list, lstm_cell_data, lstm_hidden_data
 
-    def _calculate_loss(self, each_hero_data_list, each_hero_fc_result_list):
+    def _get_last_tstep_data(self, each_hero_data_list_allt):
+        '''only last time step data is used for calculation. Not sure if this is correct'''
+        each_hero_data_list = []
+        for i in range(len(each_hero_data_list_allt)):
+            this_hero_data_list = []
+            for data in each_hero_data_list_allt[i]:
+                this_hero_data_list.append(data[:, -1, :])
+            each_hero_data_list.append(this_hero_data_list)
+        return each_hero_data_list
+
+    def _calculate_loss(self, each_hero_data_list_allt, each_hero_fc_result_list):
+        each_hero_data_list = self._get_last_tstep_data(
+            each_hero_data_list_allt)
         self.cost_all = tf.constant(0.0, dtype=tf.float32)
         for hero_index in range(len(each_hero_data_list)):
             this_hero_label_task_count = len(
@@ -217,6 +229,8 @@ class NetworkModel():
         # feature_dim=extracted_feature[0].get_shape().as_list()[-1]
         cell_out, hidden_out = LSTM(lstm_hidden_dim=self.lstm_hidden_dim).lstm_inference(
             extracted_feature, lstm_cell_all_hero, lstm_hidden_all_hero)
+        self.lstm_cell_output = cell_out
+        self.lstm_hidden_output = hidden_out
         # Communications
         Comm_out = Communication().COMM_inference(hidden_out)
         each_hero_fc_result_list = ActionChooser().Action_inference(Comm_out)
@@ -251,51 +265,84 @@ class State_splitter():
     '''
 
     def __init__(self):
-        pass
+        self.lstm_time_steps = Config.LSTM_TIME_STEPS
 
     def _split_features_one_hero(self, this_hero_data_list):
         '''
         split features of one hero into kaiwu website format
         '''
+        tstpes = self.lstm_time_steps
         # this_hero_data_list = each_hero_data_list[0]
         # get the image like feature 1d vector arranged in (6,17,17) order, and convert that into tensor of shape (height, width, depth) (1,17,17,6)
         this_hero_FeatureImgLikeMg_vec_list = tf.reshape(
-            this_hero_data_list[:6*17*17], [6, 17, 17])
+            this_hero_data_list[:, :, :6*17*17], [-1, tstpes, 6, 17, 17])
         this_hero_FeatureImgLikeMg_list = tf.transpose(
-            this_hero_FeatureImgLikeMg_vec_list, perm=[1, 2, 0])
+            this_hero_FeatureImgLikeMg_vec_list, perm=[0, 1, 3, 4, 2])
         # get VecFeatureHero and split it into shape of (1,6,251) [us 3, opponent 3]
         this_hero_VecFeatureHero_list = tf.reshape(
-            this_hero_data_list[1734:3239+1], [6, 251])
+            this_hero_data_list[:, :, 1734:3239+1], [-1, tstpes, 6, 251])
         # get MainHeroFeature with shape of (1,1,44)
         this_hero_MainHeroFeature_list = tf.reshape(
-            this_hero_data_list[3240:3283+1], [1, 44])
+            this_hero_data_list[:, :, 3240:3283+1], [-1, tstpes, 1, 44])
         # get VecSoldier and split it into shape of (1,20,25)
         this_hero_VecSoldier_list = tf.reshape(
-            this_hero_data_list[3284:3783+1], [20, 25])
+            this_hero_data_list[:, :, 3284:3783+1], [-1, tstpes, 20, 25])
         # get VecOrgan and split it into shape of (1,6,29)
         this_hero_VecOrgan_list = tf.reshape(
-            this_hero_data_list[3784:3957+1], [6, 29])
+            this_hero_data_list[:, :, 3784:3957+1], [-1, tstpes, 6, 29])
         # get VecMonster and split it into shape of (1,20,28)
         this_hero_VecMonster_list = tf.reshape(
-            this_hero_data_list[3958:4517+1], [20, 28])
+            this_hero_data_list[:, :, 3958:4517+1], [-1, tstpes, 20, 28])
         # get VecCampsWholeInfo with shape of (1,1,68)
         this_hero_VecCampsWholeInfo_list = tf.reshape(
-            this_hero_data_list[4518:4585+1], [1, 68])
+            this_hero_data_list[:, :, 4518:4585+1], [-1, tstpes, 1, 68])
         whole_feature_list = []
         for items in [this_hero_FeatureImgLikeMg_list, this_hero_VecFeatureHero_list, this_hero_MainHeroFeature_list, this_hero_VecSoldier_list, this_hero_VecOrgan_list, this_hero_VecMonster_list, this_hero_VecCampsWholeInfo_list]:
-            whole_feature_list.append(tf.expand_dims(items, axis=0))
+            whole_feature_list.append(items)
         return whole_feature_list
 
     def split_features(self, each_hero_data_list):
         splitted_features = []
         for hero_index in range(len(each_hero_data_list)):
             splitted_features.append(self._split_features_one_hero(
-                tf.squeeze(each_hero_data_list[hero_index][0])))
+                each_hero_data_list[hero_index][0]))
         return splitted_features
 
     def get_states_names(self):
         ['FeatureImgLikeMg', 'VecFeatureHero', 'MainHeroFeature',
             'VecSoldier', 'VecOrgan', 'VecMonster', 'VecCampsWholeInfo']
+
+    def merge_tsteps_dim_to_batch(self, splitted_features):
+        '''
+        each elements of splitted_features, turn shape [?,tsteps,x,y] to [?,x,y]
+        where tsteps is listm_time_steps. For all heros.
+        '''
+
+        merged_features_ah = []
+        for i in range(len(splitted_features)):
+            merged_features = []
+            for f in splitted_features[i]:
+                original_shape = f.get_shape().as_list()
+                merged_shape = [-1]+original_shape[2:]
+                mf = tf.reshape(f, merged_shape)
+                merged_features.append(mf)
+            merged_features_ah.append(merged_features)
+        return merged_features_ah
+
+    def detach_tsteps_dim_from_batch(self, merged_features):
+        '''
+        inverse of def merge_tsteps_dim_to_batch(self,splitted_features). For all heros.
+        '''
+        de_features_ah = []
+        for i in range(len(merged_features)):
+            de_features = []
+            for f in merged_features[i]:
+                original_shape = f.get_shape().as_list()
+                de_shape = [-1]+[self.lstm_time_steps]+original_shape[1:]
+                df = tf.reshape(f, de_shape)
+                de_features.append(df)
+            de_features_ah.append(de_features)
+        return de_features_ah
 
 
 class Feature_extraction():
@@ -352,11 +399,11 @@ class Feature_extraction():
         fc_b = self.create_variables(name='fc_bias', shape=[
             output_dims], initializer=tf.zeros_initializer())
         # if len(input_vec.get_shape().as_list())==1:
-        input_vec = tf.expand_dims(input_vec, 0)
+        # input_vec = tf.expand_dims(input_vec, 0)
         fc_h = tf.matmul(input_vec, fc_w) + fc_b
-        return tf.squeeze(fc_h)
+        return fc_h
 
-    def bn_relu_fc_layer(self, input_layer, output_dims):
+    def bn_relu_fc_layer(self, input_layer, output_dims, if_block, input_block_w):
         '''
         A helper function to  batch normalize, relu and fc the input tensor sequentially
         :param input_layer: 1D tensor
@@ -365,34 +412,43 @@ class Feature_extraction():
         '''
 
         # bn part
+        dimensions = input_layer.get_shape().as_list()[-1]
         mean, variance = tf.nn.moments(input_layer, axes=[0])
-        beta = tf.get_variable('beta', 1, tf.float32,
+        beta = tf.get_variable('beta', dimensions, tf.float32,
                                initializer=tf.constant_initializer(0.0, tf.float32))
-        gamma = tf.get_variable('gamma', 1, tf.float32,
+        gamma = tf.get_variable('gamma', dimensions, tf.float32,
                                 initializer=tf.constant_initializer(1.0, tf.float32))
         bn_layer = tf.nn.batch_normalization(
             input_layer, mean, variance, beta, gamma, Config.BN_EPSILON)
 
         relu_layer = tf.nn.relu(bn_layer)
-        output = self.fc_layer(relu_layer, output_dims)
+        if if_block:
+            output = tf.matmul(input_layer, input_block_w)
+        else:
+            output = self.fc_layer(relu_layer, output_dims)
         return output
 
-    def fc_bn_relu_layer(self, input_layer, output_dims, if_bn):
+    def fc_bn_relu_layer(self, input_layer, output_dims, if_bn, if_block, input_block_w):
         '''
         A helper function to  fc, batch normalize, relu  the input tensor sequentially
         :param input_layer: 1D tensor
         :param output_dims: int. 
+        :param if_bn: if BN layer is used
+        :param if_block: if vec net is in the form of block mat mul
         :return: 1D tensor. Y = Relu(batch_normalize(fc(X)))
         '''
 
+        if if_block:
+            fc_layer = tf.matmul(input_layer, input_block_w)
+        else:
+            fc_layer = self.fc_layer(input_layer, output_dims)
         # bn part
-        fc_layer = self.fc_layer(input_layer, output_dims)
-
+        dimensions = fc_layer.get_shape().as_list()[-1]
         if if_bn:
             mean, variance = tf.nn.moments(fc_layer, axes=[0])
-            beta = tf.get_variable('beta', 1, tf.float32,
+            beta = tf.get_variable('beta', dimensions, tf.float32,
                                    initializer=tf.constant_initializer(0.0, tf.float32))
-            gamma = tf.get_variable('gamma', 1, tf.float32,
+            gamma = tf.get_variable('gamma', dimensions, tf.float32,
                                     initializer=tf.constant_initializer(1.0, tf.float32))
             bn_layer = tf.nn.batch_normalization(
                 fc_layer, mean, variance, beta, gamma, Config.BN_EPSILON)
@@ -403,9 +459,9 @@ class Feature_extraction():
 
         return relu_layer
 
-    def res_fc_block(self, input_layer, output_dims, num_vec_fc_in_resblock=Config.num_vec_fc_in_resblock):
+    def res_fc_block(self, input_layer, output_dims, if_block, input_block_w, num_vec_fc_in_resblock=Config.num_vec_fc_in_resblock):
         '''
-        res_fc_block (unfinished)
+        res_fc_block
         '''
 
         input_dim = input_layer.get_shape().as_list()[-1]
@@ -415,11 +471,13 @@ class Feature_extraction():
             if_change_dim = False
 
         with tf.variable_scope('fc1_in_resblock'):
-            fc_layer1 = self.bn_relu_fc_layer(input_layer, output_dims)
+            fc_layer1 = self.bn_relu_fc_layer(
+                input_layer, output_dims, if_block, input_block_w)
             fc_layer_out = fc_layer1
         if num_vec_fc_in_resblock == 2:
             with tf.variable_scope('fc2_in_resblock'):
-                fc_layer2 = self.bn_relu_fc_layer(fc_layer1, output_dims)
+                fc_layer2 = self.bn_relu_fc_layer(
+                    fc_layer1, output_dims, if_block, input_block_w)
                 fc_layer_out = fc_layer2
         # if not is_change_dim is True:
         resoutput = input_layer+fc_layer_out
@@ -606,18 +664,20 @@ class Feature_extraction():
 
         return layers[-1]
 
-    def vec_fc_first_layer(self, input_layer, output_dims, if_bn):
-        return self.fc_bn_relu_layer(input_layer, output_dims, if_bn)
+    def vec_fc_first_layer(self, input_layer, output_dims, if_bn, if_block, input_block_w=None):
+        return self.fc_bn_relu_layer(input_layer, output_dims, if_bn, if_block, input_block_w)
 
-    def vec_fc_second_layer(self, input_layer, output_dims, vec_fc_2ndlayer_type='resfc', if_bn=True):
+    def vec_fc_second_layer(self, input_layer, output_dims, vec_fc_2ndlayer_type, if_bn, if_block, input_block_w=None):
         if vec_fc_2ndlayer_type == 'resfc':
-            output_layer = self.res_fc_block(input_layer, output_dims)
+            output_layer = self.res_fc_block(
+                input_layer, output_dims, if_block, input_block_w)
         if vec_fc_2ndlayer_type == 'fc':
             output_layer = self.fc_bn_relu_layer(
-                input_layer, output_dims, if_bn)
+                input_layer, output_dims, if_bn, if_block, input_block_w)
         return output_layer
 
-    def vec_feature_extraction(self, vec_state_list):
+    def vec_feature_extraction(self, vec_state_list, if_quicker_implementation=False):
+        if_block = if_quicker_implementation
         input_dim_list = [vec_state.get_shape().as_list()[-1]
                           for vec_state in vec_state_list]
         # num of units per class of states e.g.10 for VecSoldier since there are 10 soldiers
@@ -626,29 +686,81 @@ class Feature_extraction():
         state_name_list = Config.states_names[1:]
 
         assert len(state_name_list) == len(input_dim_list)
+        if not if_quicker_implementation:
+            output_vec_feature_list = []
+            for i, state_name in enumerate(state_name_list):
+                this_unit_feature_list = []
+                for j in range(num_unit_perState_list[i]):
+                    with tf.variable_scope(state_name+f'_{j}', reuse=self.reuse):
+                        input_layer = vec_state_list[i][:, j, :]
+                        output_dims_fc1 = Config.vec_feat_extract_out_dims[0][i]
+                        output_dims_fc2 = Config.vec_feat_extract_out_dims[1][i]
 
-        output_vec_feature_list = []
-        for i, state_name in enumerate(state_name_list):
-            this_unit_feature_list = []
-            for j in range(num_unit_perState_list[i]):
-                with tf.variable_scope(state_name+f'_{j}', reuse=self.reuse):
-                    input_layer = vec_state_list[i][0][j]
+                        with tf.variable_scope('vec_fc_1', reuse=self.reuse):
+                            fc1 = self.vec_fc_first_layer(
+                                input_layer, output_dims_fc1, Config.if_vec_fc_bn, if_block)
+
+                        with tf.variable_scope('vec_fc_2', reuse=self.reuse):
+                            fc2 = self.vec_fc_second_layer(
+                                fc1, output_dims_fc2, Config.vec_fc_2ndlayer_type, Config.if_vec_fc_bn, if_block)
+
+                    this_unit_feature_list.append(fc2)
+
+                output_vec_feature_list.append(this_unit_feature_list)
+        else:
+            # another implementation
+            input_layer_list = []
+            input_dim_list = []
+            fc1_w_list = []
+            fc2_w_list = []
+            for i, state_name in enumerate(state_name_list):
+                for j in range(num_unit_perState_list[i]):
+                    input_layer_list.append(vec_state_list[i][:, j, :])
+                    input_dim_list.append(
+                        vec_state_list[i][:, j, :].get_shape().as_list()[-1])
                     output_dims_fc1 = Config.vec_feat_extract_out_dims[0][i]
                     output_dims_fc2 = Config.vec_feat_extract_out_dims[1][i]
+                    shape_fc1 = [input_dim_list[-1], output_dims_fc1, ]
+                    shape_fc2 = [output_dims_fc1, output_dims_fc2, ]
+                    fc1_w = self.create_variables(
+                        'vec_fc1_weight_state'+f'{i}'+'_unit'+f'{j}', shape_fc1, initializer=Config.vecNet_fc_initializer, is_fc_layer=True, trainable=True)
+                    fc2_w = self.create_variables(
+                        'vec_fc2_weight_state'+f'{i}'+'_unit'+f'{j}', shape_fc2, initializer=Config.vecNet_fc_initializer, is_fc_layer=True, trainable=True)
+                    fc1_w_list.append(fc1_w)
+                    fc2_w_list.append(fc2_w)
+            fc1_w_block = self._get_block_matrix(fc1_w_list)
+            fc2_w_block = self._get_block_matrix(fc2_w_list)
+            fc1_b = self.create_variables('vec_fc1_bias', sum(
+                Config.vec_feat_extract_out_dims[0]), initializer=tf.zeros_initializer(), is_fc_layer=True, trainable=True)
+            fc2_b = self.create_variables('vec_fc2_bias', sum(
+                Config.vec_feat_extract_out_dims[1]), initializer=tf.zeros_initializer(), is_fc_layer=True, trainable=True)
+            input_layer_concat = tf.concat(input_layer_list, 1)
+            with tf.variable_scope('vec_fc_block_1', reuse=self.reuse):
+                fc1_layer = self.vec_fc_first_layer(
+                    input_layer, output_dims_fc1, Config.if_vec_fc_bn, if_block, input_block_w=fc1_w_block)
+            with tf.variable_scope('vec_fc_block_2', reuse=self.reuse):
+                fc2_layer = self.vec_fc_second_layer(
+                    fc1, output_dims_fc2, Config.vec_fc_2ndlayer_type, Config.if_vec_fc_bn, if_block, input_block_w=fc2_w_block)
+            output_vec_feature_list = fc2_layer
+            # 这里继续
+            #         with tf.variable_scope('vec_fc_1', reuse=self.reuse):
+            #             fc1 = self.vec_fc_first_layer(
+            #                 input_layer, output_dims_fc1, Config.if_vec_fc_bn)
 
-                    with tf.variable_scope('vec_fc_1', reuse=self.reuse):
-                        fc1 = self.vec_fc_first_layer(
-                            input_layer, output_dims_fc1, Config.if_vec_fc_bn)
+            #         with tf.variable_scope('vec_fc_2', reuse=self.reuse):
+            #             fc2 = self.vec_fc_second_layer(
+            #                 fc1, output_dims_fc2, Config.vec_fc_2ndlayer_type, if_bn=Config.if_vec_fc_bn)
 
-                    with tf.variable_scope('vec_fc_2', reuse=self.reuse):
-                        fc2 = self.vec_fc_second_layer(
-                            fc1, output_dims_fc2, Config.vec_fc_2ndlayer_type, if_bn=Config.if_vec_fc_bn)
+            #     this_unit_feature_list.append(fc2)
 
-                this_unit_feature_list.append(tf.expand_dims(fc2, 0))
-
-            output_vec_feature_list.append(this_unit_feature_list)
-
+            # output_vec_feature_list.append(this_unit_feature_list)
+        #########################
         return output_vec_feature_list
+
+    def _get_block_matrix(self, blocks):
+        linop_blocks = [tf.linalg.LinearOperatorFullMatrix(
+            block) for block in blocks]
+        linop_block_diagonal = tf.linalg.LinearOperatorBlockDiag(linop_blocks)
 
     def img_feature_extraction(self, input_tensor_batch, n, reuse, img_net_type):
         '''
@@ -662,7 +774,9 @@ class Feature_extraction():
             output = self.conv_2_inference(input_tensor_batch, reuse)
         return output
 
-    def get_extracted_feature(self, whole_feature_list):
+    def get_extracted_feature(self, whole_feature_list_unmerged):
+        whole_feature_list = State_splitter().merge_tsteps_dim_to_batch(
+            whole_feature_list_unmerged)
         extracted_feature_all_heros = []
         for i, each_hero_feature in enumerate(whole_feature_list):
             with tf.variable_scope('hero'+f'_{i}', reuse=self.reuse):
@@ -686,38 +800,81 @@ class Feature_extraction():
 class LSTM():
     def __init__(self, lstm_hidden_dim):
         self.lstm_hidden_dim = lstm_hidden_dim
-        self.lstm_cell = tf.nn.rnn_cell.LSTMCell(self.lstm_hidden_dim)
+        self.lstm_cell_ah = [tf.nn.rnn_cell.LSTMCell(
+            self.lstm_hidden_dim) for _ in range(3)]
         self.reuse = Config.reuse
+        self.tstep = Config.LSTM_TIME_STEPS
+        # self.lstm_multi_cell=tf.nn.rnn_cell.MultiRNNCell([self.lstm_cell]*self.tstep)
     # LSTM Start
     # def _init_lstm_cell(self):
     #     # lstm_cell = tf.nn.rnn_cell.LSTMCell(self.lstm_hidden_dim)
     #     lstm_cell = tf.keras.layers.LSTM(self.lstm_hidden_dim)
     #     return lstm_cell
 
-    def _lstm_forward(self, lstm_input, cell_ph, hidden_ph):
+    def _lstm_cell_forward(self, lstm_input, cell_ph, hidden_ph):
         # lstm_input: [batch_size, input_size]
         # cell_ph: [batch_size, self.lstm_hidden_dim]
         # hidden_ph: [batch_size, self.lstm_hidden_dim]
-        print('lstm_input', lstm_input.get_shape().as_list())
-        print('cell_ph', cell_ph.get_shape().as_list())
-        print('hidden_ph', hidden_ph.get_shape().as_list())
         hidden_out, out = self.lstm_cell(lstm_input, [cell_ph, hidden_ph])
         cell_out = out[0]
 
         return cell_out, hidden_out
 
-    def lstm_inference(self, extracted_feature, cell_all_hero, hidden_all_hero):
-        cell_out_all_hero = []
-        hidden_out_all_hero = []
-        for i in range(len(extracted_feature)):
-            ext_feat_this_hero = extracted_feature[i]
-            cell_in_this_hero = cell_all_hero[i]
-            hidden_in_this_hero = hidden_all_hero[i]
-            with tf.variable_scope('hero'+f'_{i}_lstm', reuse=self.reuse):
-                cell_out_this_hero, hidden_out_this_hero = self._lstm_forward(
-                    ext_feat_this_hero, cell_in_this_hero, hidden_in_this_hero)
-            cell_out_all_hero.append(cell_out_this_hero)
-            hidden_out_all_hero.append(hidden_out_this_hero)
+    def _lstm_multi_cell_forward(self, lstm_cell, lstm_input, cell_ph, hidden_ph):
+        '''
+        :param lstm_input: lstm input per hero with shape [batch_size, tstps, input_dim]
+        :param cell_ph: cell input with shape [batch_size, LSTM_UNIT_SIZE]
+        :param hidden_ph: hidden cell input with shape [batch_size, LSTM_UNIT_SIZE]
+        '''
+        # hidden_out_list = []
+        # out_list = []
+        # for t in range(self.tstep):
+        #     hidden, state=self.lstm_multi_cell(lstm_input[:,t,:], [cell_ph, hidden_ph])
+        #     hidden_list.append(hidden)
+        #     state_list.append(state)
+        # hidden_out=hidden_list[-1]
+        # cell_out=state_list[-1,0]
+        outputs, final_state = tf.nn.dynamic_rnn(lstm_cell, lstm_input, initial_state=tf.nn.rnn_cell.LSTMStateTuple(
+                                                 cell_ph, hidden_ph), time_major=False)
+        cell_out = final_state[0]
+        hidden_out = final_state[1]
+        return cell_out, hidden_out
+
+    def _detach_tsteps(self, extracted_feature):
+        '''
+        detach tsteps dim for one hero
+        '''
+        original_shape = extracted_feature.get_shape().as_list()
+        de_shape = [-1]+[self.tstep]+original_shape[1:]
+        df = tf.reshape(extracted_feature, de_shape)
+        return df
+
+    def lstm_inference(self, extracted_feature, cell_all_hero, hidden_all_hero, if_multi_cell=True):
+        if if_multi_cell:
+            cell_out_all_hero = []
+            hidden_out_all_hero = []
+            # feature_with_tsteps=State_splitter().detach_tsteps_dim_from_batch(extracted_feature)
+            for i, feat_ph in enumerate(extracted_feature):
+                ext_feat_this_hero = self._detach_tsteps(feat_ph)
+                cell_in_this_hero = cell_all_hero[i]
+                hidden_in_this_hero = hidden_all_hero[i]
+                with tf.variable_scope('hero'+f'_{i}_lstm_multi', reuse=self.reuse):
+                    cell_out_this_hero, hidden_out_this_hero = self._lstm_multi_cell_forward(
+                        self.lstm_cell_ah[i], ext_feat_this_hero, cell_in_this_hero, hidden_in_this_hero)
+                cell_out_all_hero.append(cell_out_this_hero)
+                hidden_out_all_hero.append(hidden_out_this_hero)
+        else:
+            cell_out_all_hero = []
+            hidden_out_all_hero = []
+            for i in range(len(extracted_feature)):
+                ext_feat_this_hero = extracted_feature[i]
+                cell_in_this_hero = cell_all_hero[i]
+                hidden_in_this_hero = hidden_all_hero[i]
+                with tf.variable_scope('hero'+f'_{i}_lstm', reuse=self.reuse):
+                    cell_out_this_hero, hidden_out_this_hero = self._lstm_cell_forward(self.lstm_cell_ah[i],
+                                                                                       ext_feat_this_hero, cell_in_this_hero, hidden_in_this_hero)
+                cell_out_all_hero.append(cell_out_this_hero)
+                hidden_out_all_hero.append(hidden_out_this_hero)
         return cell_out_all_hero, hidden_out_all_hero
 
     # LSTM End
