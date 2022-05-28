@@ -3,7 +3,7 @@
 class ModelConfig:
     HERO_NUM = 3
     LSTM_TIME_STEPS = 16
-    LSTM_UNIT_SIZE = 512
+    LSTM_UNIT_SIZE = 512*3
     HERO_DATA_SPLIT_SHAPE = [
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
@@ -37,13 +37,13 @@ class ModelConfig:
     
     import tensorflow as tf
     BN_EPSILON=0.001
-    resnet_FeatureImgLikeMg_n=2 #num of residual blocks used for FeatureImgLike per hero
+    resnet_FeatureImgLikeMg_n=1 #num of residual blocks used for FeatureImgLike per hero
     reuse = tf.compat.v1.AUTO_REUSE #REUSE parameter for tf.variable_scope()
     states_names=['FeatureImgLikeMg','VecFeatureHero','MainHeroFeature','VecSoldier','VecOrgan','VecMonster','VecCampsWholeInfo']
 
 
     img_num_res_blocks=1
-    img_net_type='img_res'#'img_conv' or 'img_res'
+    img_net_type='img_conv'#'img_conv' or 'img_res'
     vec_feat_extract_out_dims=[[16,16,16,16,16,16],  #[[1st fc],[2nd fc]]
                                 [16,16,16,16,16,16]]
     vec_fc_2ndlayer_type='resfc'#'resfc' or 'fc' 

@@ -87,12 +87,14 @@ class Model():
                 self.batch_size, self.hero_data_split_shape[2][0]), name="feature_hero2", dtype=np.float32)
             hero_data_list.append(self.feature_hero2)
             self.lstm_cell_ph = tf.placeholder(shape=(
-                3, self.batch_size, self.lstm_hidden_dim), name="lstm_cell", dtype=np.float32)
+                self.batch_size, self.lstm_hidden_dim), name="lstm_cell", dtype=np.float32)
             self.lstm_hidden_ph = tf.placeholder(shape=(
-                3, self.batch_size, self.lstm_hidden_dim), name="lstm_hidden", dtype=np.float32)
+                self.batch_size, self.lstm_hidden_dim), name="lstm_hidden", dtype=np.float32)
             
-            self.lstm_cell_ah=[self.lstm_cell_ph[i,:,:] for i in range(3)]
-            self.lstm_hidden_ah=[self.lstm_hidden_ph[i,:,:] for i in range(3)]
+            cell0, cell1, cell2 = tf.split(self.lstm_cell_ph, num_or_size_splits=3, axis=1)
+            self.lstm_cell_ah=[cell0, cell1, cell2]
+            hidden0, hidden1, hidden2 = tf.split(self.lstm_hidden_ph, num_or_size_splits=3, axis=1)
+            self.lstm_hidden_ah=[hidden0, hidden1, hidden2]
 
             each_hero_data_list = self._split_inference_data(hero_data_list)
             probs_list = self._inference(
@@ -151,7 +153,7 @@ class Model():
     def get_optimizer(self):
         return tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=0.00001)
 
-    def _split_data(self, this_hero_data, this_hero_data_split_shape):
+    def _split_data(self, this_hero_data, this_hero_data_split_shape, hero_id):
         # calculate length of each frame
         this_hero_each_frame_data_length = np.sum(
             np.array(this_hero_data_split_shape))
@@ -160,8 +162,10 @@ class Model():
         this_hero_sequence_data_length = this_hero_each_frame_data_length * self.lstm_time_steps
         this_hero_sequence_data_split_shape = np.array(
             [this_hero_sequence_data_length, self.lstm_unit_size, self.lstm_unit_size])
-        sequence_data, lstm_cell_data, lstm_hidden_data = tf.split(
+        sequence_data, lstm_cell_data_ah, lstm_hidden_data_ah = tf.split(
             this_hero_data, this_hero_sequence_data_split_shape, axis=1)
+        lstm_cell_data=tf.split(lstm_cell_data_ah, num_or_size_splits=3, axis=1)[hero_id]
+        lstm_hidden_data=tf.split(lstm_hidden_data_ah, num_or_size_splits=3, axis=1)[hero_id]
         reshape_sequence_data = tf.reshape(
             sequence_data, [-1, self.lstm_time_steps, this_hero_each_frame_data_length])
         sequence_this_hero_data_list = tf.split(
@@ -315,10 +319,11 @@ class Model():
         extracted_feature = Feature_extraction().get_extracted_feature(whole_feature_list)
         # LSTM, hidden_out is output
         # feature_dim=extracted_feature[0].get_shape().as_list()[-1]
-        cell_out, hidden_out = LSTM(lstm_hidden_dim=self.lstm_hidden_dim).lstm_inference(
+        lstm_module=LSTM(lstm_hidden_dim=self.lstm_hidden_dim/3) #hidden_dim=512 per hero
+        cell_out, hidden_out = lstm_module.lstm_inference(
             extracted_feature, lstm_cell_all_hero, lstm_hidden_all_hero)
-        self.lstm_cell_output = cell_out
-        self.lstm_hidden_output = hidden_out
+        self.lstm_cell_output = lstm_module.reshape_for_lstm_output(cell_out)
+        self.lstm_hidden_output = lstm_module.reshape_for_lstm_output(hidden_out)
         # Communications
         Comm_out = Communication().COMM_inference(hidden_out)
         each_hero_fc_result_list = ActionChooser().Action_inference(Comm_out)
@@ -940,6 +945,9 @@ class LSTM():
         de_shape = [-1]+[self.tstep]+original_shape[1:]
         df = tf.reshape(extracted_feature, de_shape)
         return df
+
+    def reshape_for_lstm_output(self,state_list):
+        return tf.concat(state_list,1)
 
     def lstm_inference(self, extracted_feature, cell_all_hero, hidden_all_hero, if_multi_cell=True):
         if if_multi_cell:

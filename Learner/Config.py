@@ -1,7 +1,7 @@
 class Config:
     NETWORK_NAME = "network"
     LSTM_TIME_STEPS = 16 # lstm step
-    LSTM_UNIT_SIZE = 512 # lstm cell and hidden state size
+    LSTM_UNIT_SIZE = 512*3 # lstm cell and hidden state size
     HERO_DATA_SPLIT_SHAPE = [
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
