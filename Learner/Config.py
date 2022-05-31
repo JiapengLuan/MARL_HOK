@@ -1,7 +1,7 @@
 class Config:
     NETWORK_NAME = "network"
     LSTM_TIME_STEPS = 16 # lstm step
-    LSTM_UNIT_SIZE = 512*3 # lstm cell and hidden state size
+    LSTM_UNIT_SIZE = 128*3 # lstm cell and hidden state size
     HERO_DATA_SPLIT_SHAPE = [
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
@@ -44,8 +44,8 @@ class Config:
 
     img_num_res_blocks=1
     img_net_type='img_conv'#'img_conv' or 'img_res'
-    vec_feat_extract_out_dims=[[16,16,16,16,16,16],  #[[1st fc],[2nd fc]]
-                                [16,16,16,16,16,16]]
+    vec_feat_extract_out_dims=[[8,8,8,8,8,8],  #[[1st fc],[2nd fc]]
+                                [8,8,8,8,8,8]]
     vec_fc_2ndlayer_type='resfc'#'resfc' or 'fc' 
     if_vec_fc_bn=True #Should vec 2 fc layers contain bn layer? When 2nd layer is 'resfc', this had better be True; when 2nd layer is 'fc', we can try True or False
     num_vec_fc_in_resblock=1 
