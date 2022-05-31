@@ -320,13 +320,13 @@ class Model():
         # LSTM, hidden_out is output
         # feature_dim=extracted_feature[0].get_shape().as_list()[-1]
         lstm_module=LSTM(lstm_hidden_dim=self.lstm_hidden_dim/3) #hidden_dim=512 per hero
-        cell_out, hidden_out = lstm_module.lstm_inference(
-            extracted_feature, lstm_cell_all_hero, lstm_hidden_all_hero)
-        self.lstm_cell_output = lstm_module.reshape_for_lstm_output(cell_out)
-        self.lstm_hidden_output = lstm_module.reshape_for_lstm_output(hidden_out)
+        # cell_out, hidden_out = lstm_module.lstm_inference(
+        #     extracted_feature, lstm_cell_all_hero, lstm_hidden_all_hero)
+        self.lstm_cell_output = lstm_module.reshape_for_lstm_output(lstm_cell_all_hero)
+        self.lstm_hidden_output = lstm_module.reshape_for_lstm_output(lstm_hidden_all_hero)
         # Communications
-        Comm_out = Communication().COMM_inference(hidden_out)
-        each_hero_fc_result_list = ActionChooser().Action_inference(Comm_out)
+        # Comm_out = Communication().COMM_inference(hidden_out)
+        each_hero_fc_result_list = ActionChooser().Action_inference(extracted_feature)
 
         return each_hero_fc_result_list
 
