@@ -2,7 +2,7 @@
 
 class ModelConfig:
     HERO_NUM = 3
-    LSTM_TIME_STEPS = 16
+    LSTM_TIME_STEPS = 1
     LSTM_UNIT_SIZE = 128*3
     HERO_DATA_SPLIT_SHAPE = [
                              [4586,  13, 25, 42, 42, 39,  1,  1,  1, 1, 1, 1, 1,  13, 25, 42, 42, 39,  1,  1,1,1,1,1],
@@ -44,12 +44,16 @@ class ModelConfig:
 
     img_num_res_blocks=1
     img_net_type='img_conv'#'img_conv' or 'img_res'
-    vec_feat_extract_out_dims=[[8,8,8,8,8,8],  #[[1st fc],[2nd fc]]
-                                [8,8,8,8,8,8]]
-    vec_fc_2ndlayer_type='resfc'#'resfc' or 'fc' 
-    if_vec_fc_bn=True #Should vec 2 fc layers contain bn layer? When 2nd layer is 'resfc', this had better be True; when 2nd layer is 'fc', we can try True or False
+    vec_feat_extract_out_dims=[[64,64,64,64,64,None],  #[[1st fc],[2nd fc],[3nd fc]]
+                                [32,32,32,32,32,None],
+                                [32,32,32,32,32,32]]
+    vec_unit_group_split_id=[3,None,10,3,10,None] #indeces for splitting units into two sides
+    vec_fc_2ndlayer_type='fc'#'resfc' or 'fc' 
+    if_vec_fc_bn=False #Should vec 2 fc layers contain bn layer? When 2nd layer is 'resfc', this had better be True; when 2nd layer is 'fc', we can try True or False
     num_vec_fc_in_resblock=1 
-    vecNet_fc_initializer=tf.orthogonal_initializer()
+    vecNet_fc_weight_initializer=tf.orthogonal_initializer()
+    vecNet_fc_bias_initializer=tf.constant_initializer(0.0)
+    img_conv_initializer=tf.orthogonal_initializer()
     
     EMBEDDING_DIM = 16
 
