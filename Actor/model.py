@@ -4,7 +4,7 @@ import tensorflow as tf
 import glob
 import numpy as np
 import h5py
-from algorithms.model.model_config import ModelConfig as Config
+#from algorithms.model.model_config import ModelConfig as Config
 import sys
 import threading
 
@@ -54,6 +54,7 @@ class Model():
         self.feature_img_dim = Config.HERO_SERI_VEC_SPLIT_SHAPE[0][0]
         self.feature_vec_dim = Config.HERO_SERI_VEC_SPLIT_SHAPE[0][1]
         self.lstm_hidden_dim = Config.LSTM_UNIT_SIZE
+        self.Config = Config
 
         self.graph = None
 
@@ -314,19 +315,19 @@ class Model():
         # split states
         lstm_cell_all_hero = self.lstm_cell_ah
         lstm_hidden_all_hero = self.lstm_hidden_ah
-        whole_feature_list = State_splitter().split_features(each_hero_data_list)
+        whole_feature_list = State_splitter(Config = self.Config).split_features(each_hero_data_list)
         # feature extraction
-        extracted_feature = Feature_extraction().get_extracted_feature(whole_feature_list)
+        extracted_feature = Feature_extraction(Config = self.Config).get_extracted_feature(whole_feature_list)
         # LSTM, hidden_out is output
         # feature_dim=extracted_feature[0].get_shape().as_list()[-1]
-        lstm_module=LSTM(lstm_hidden_dim=self.lstm_hidden_dim/3) #hidden_dim=512 per hero
+        lstm_module=LSTM(lstm_hidden_dim=self.lstm_hidden_dim/3, Config = self.Config) #hidden_dim=512 per hero
         cell_out, hidden_out = lstm_module.lstm_inference(
             extracted_feature, lstm_cell_all_hero, lstm_hidden_all_hero)
         self.lstm_cell_output = lstm_module.reshape_for_lstm_output(cell_out)
         self.lstm_hidden_output = lstm_module.reshape_for_lstm_output(hidden_out)
         # Communications
-        Comm_out = Communication().COMM_inference(hidden_out)
-        each_hero_fc_result_list = ActionChooser().Action_inference(Comm_out)
+        Comm_out = Communication(Config = self.Config).COMM_inference(hidden_out)
+        each_hero_fc_result_list = ActionChooser(Config = self.Config).Action_inference(Comm_out)
 
         return each_hero_fc_result_list
 
@@ -357,7 +358,8 @@ class State_splitter():
     split states of 3 heros into kaiwu website format, use function split_features
     '''
 
-    def __init__(self):
+    def __init__(self, Config):
+        self.Config = Config
         self.lstm_time_steps = Config.LSTM_TIME_STEPS
         #for actor
         self.lstm_time_steps = 1
@@ -443,7 +445,8 @@ class State_splitter():
 class Feature_extraction():
     '''extract features. from raw state data to deep features'''
 
-    def __init__(self):
+    def __init__(self, Config):
+        self.Config = Config
         self.reuse = Config.reuse
 
     def create_variables(self, name, shape, initializer=tf.contrib.layers.xavier_initializer(), is_fc_layer=False, trainable=True):
@@ -473,7 +476,7 @@ class Feature_extraction():
         '''
         input_dim = input_layer.get_shape().as_list()[-1]
         fc_w = self.create_variables(name='fc_weights', shape=[input_dim, num_labels], is_fc_layer=True,
-                                     initializer=Config.vecNet_fc_initializer)
+                                     initializer=self.Config.vecNet_fc_initializer)
         fc_b = self.create_variables(name='fc_bias', shape=[
             num_labels], initializer=tf.zeros_initializer())
 
@@ -490,7 +493,7 @@ class Feature_extraction():
         input_dims = input_vec.get_shape().as_list()[-1]
         input_dims_num = len(input_vec.get_shape().as_list())
         fc_w = self.create_variables(name='fc_weights', shape=[input_dims, output_dims], is_fc_layer=True,
-                                     initializer=Config.vecNet_fc_initializer)
+                                     initializer=self.Config.vecNet_fc_initializer)
         fc_b = self.create_variables(name='fc_bias', shape=[
             output_dims], initializer=tf.zeros_initializer())
         # if len(input_vec.get_shape().as_list())==1:
@@ -514,7 +517,7 @@ class Feature_extraction():
         gamma = tf.get_variable('gamma', dimensions, tf.float32,
                                 initializer=tf.constant_initializer(1.0, tf.float32))
         bn_layer = tf.nn.batch_normalization(
-            input_layer, mean, variance, beta, gamma, Config.BN_EPSILON)
+            input_layer, mean, variance, beta, gamma, self.Config.BN_EPSILON)
 
         relu_layer = tf.nn.relu(bn_layer)
         if if_block:
@@ -546,7 +549,7 @@ class Feature_extraction():
             gamma = tf.get_variable('gamma', dimensions, tf.float32,
                                     initializer=tf.constant_initializer(1.0, tf.float32))
             bn_layer = tf.nn.batch_normalization(
-                fc_layer, mean, variance, beta, gamma, Config.BN_EPSILON)
+                fc_layer, mean, variance, beta, gamma, self.Config.BN_EPSILON)
 
             relu_layer = tf.nn.relu(bn_layer)
         else:
@@ -554,11 +557,12 @@ class Feature_extraction():
 
         return relu_layer
 
-    def res_fc_block(self, input_layer, output_dims, if_block, input_block_w, num_vec_fc_in_resblock=Config.num_vec_fc_in_resblock):
+    def res_fc_block(self, input_layer, output_dims, if_block, input_block_w, num_vec_fc_in_resblock=None):
         '''
         res_fc_block
         '''
-
+        if num_vec_fc_in_resblock is None:
+            num_vec_fc_in_resblock = self.Config.num_vec_fc_in_resblock
         input_dim = input_layer.get_shape().as_list()[-1]
         if not input_dim == output_dims:
             if_change_dim = True
@@ -598,7 +602,7 @@ class Feature_extraction():
         gamma = tf.get_variable('gamma', dimension, tf.float32,
                                 initializer=tf.constant_initializer(1.0, tf.float32))
         bn_layer = tf.nn.batch_normalization(
-            input_layer, mean, variance, beta, gamma, Config.BN_EPSILON)
+            input_layer, mean, variance, beta, gamma, self.Config.BN_EPSILON)
 
         return bn_layer
 
@@ -778,7 +782,7 @@ class Feature_extraction():
         # num of units per class of states e.g.10 for VecSoldier since there are 10 soldiers
         num_unit_perState_list = [vec_state.get_shape(
         ).as_list()[-2] for vec_state in vec_state_list]
-        state_name_list = Config.states_names[1:]
+        state_name_list = self.Config.states_names[1:]
 
         assert len(state_name_list) == len(input_dim_list)
         if not if_quicker_implementation:
@@ -788,16 +792,16 @@ class Feature_extraction():
                 for j in range(num_unit_perState_list[i]):
                     with tf.variable_scope(state_name+f'_{j}', reuse=self.reuse):
                         input_layer = vec_state_list[i][:, j, :]
-                        output_dims_fc1 = Config.vec_feat_extract_out_dims[0][i]
-                        output_dims_fc2 = Config.vec_feat_extract_out_dims[1][i]
+                        output_dims_fc1 = self.Config.vec_feat_extract_out_dims[0][i]
+                        output_dims_fc2 = self.Config.vec_feat_extract_out_dims[1][i]
 
                         with tf.variable_scope('vec_fc_1', reuse=self.reuse):
                             fc1 = self.vec_fc_first_layer(
-                                input_layer, output_dims_fc1, Config.if_vec_fc_bn, if_block)
+                                input_layer, output_dims_fc1, self.Config.if_vec_fc_bn, if_block)
 
                         with tf.variable_scope('vec_fc_2', reuse=self.reuse):
                             fc2 = self.vec_fc_second_layer(
-                                fc1, output_dims_fc2, Config.vec_fc_2ndlayer_type, Config.if_vec_fc_bn, if_block)
+                                fc1, output_dims_fc2, self.Config.vec_fc_2ndlayer_type, self.Config.if_vec_fc_bn, if_block)
 
                     this_unit_feature_list.append(fc2)
 
@@ -813,29 +817,29 @@ class Feature_extraction():
                     input_layer_list.append(vec_state_list[i][:, j, :])
                     input_dim_list.append(
                         vec_state_list[i][:, j, :].get_shape().as_list()[-1])
-                    output_dims_fc1 = Config.vec_feat_extract_out_dims[0][i]
-                    output_dims_fc2 = Config.vec_feat_extract_out_dims[1][i]
+                    output_dims_fc1 = self.Config.vec_feat_extract_out_dims[0][i]
+                    output_dims_fc2 = self.Config.vec_feat_extract_out_dims[1][i]
                     shape_fc1 = [input_dim_list[-1], output_dims_fc1, ]
                     shape_fc2 = [output_dims_fc1, output_dims_fc2, ]
                     fc1_w = self.create_variables(
-                        'vec_fc1_weight_state'+f'{i}'+'_unit'+f'{j}', shape_fc1, initializer=Config.vecNet_fc_initializer, is_fc_layer=True, trainable=True)
+                        'vec_fc1_weight_state'+f'{i}'+'_unit'+f'{j}', shape_fc1, initializer=self.Config.vecNet_fc_initializer, is_fc_layer=True, trainable=True)
                     fc2_w = self.create_variables(
-                        'vec_fc2_weight_state'+f'{i}'+'_unit'+f'{j}', shape_fc2, initializer=Config.vecNet_fc_initializer, is_fc_layer=True, trainable=True)
+                        'vec_fc2_weight_state'+f'{i}'+'_unit'+f'{j}', shape_fc2, initializer=self.Config.vecNet_fc_initializer, is_fc_layer=True, trainable=True)
                     fc1_w_list.append(fc1_w)
                     fc2_w_list.append(fc2_w)
             fc1_w_block = self._get_block_matrix(fc1_w_list)
             fc2_w_block = self._get_block_matrix(fc2_w_list)
             fc1_b = self.create_variables('vec_fc1_bias', sum(
-                Config.vec_feat_extract_out_dims[0]), initializer=tf.zeros_initializer(), is_fc_layer=True, trainable=True)
+                self.Config.vec_feat_extract_out_dims[0]), initializer=tf.zeros_initializer(), is_fc_layer=True, trainable=True)
             fc2_b = self.create_variables('vec_fc2_bias', sum(
-                Config.vec_feat_extract_out_dims[1]), initializer=tf.zeros_initializer(), is_fc_layer=True, trainable=True)
+                self.Config.vec_feat_extract_out_dims[1]), initializer=tf.zeros_initializer(), is_fc_layer=True, trainable=True)
             input_layer_concat = tf.concat(input_layer_list, 1)
             with tf.variable_scope('vec_fc_block_1', reuse=self.reuse):
                 fc1_layer = self.vec_fc_first_layer(
-                    input_layer, output_dims_fc1, Config.if_vec_fc_bn, if_block, input_block_w=fc1_w_block)
+                    input_layer, output_dims_fc1, self.Config.if_vec_fc_bn, if_block, input_block_w=fc1_w_block)
             with tf.variable_scope('vec_fc_block_2', reuse=self.reuse):
                 fc2_layer = self.vec_fc_second_layer(
-                    fc1, output_dims_fc2, Config.vec_fc_2ndlayer_type, Config.if_vec_fc_bn, if_block, input_block_w=fc2_w_block)
+                    fc1, output_dims_fc2, self.Config.vec_fc_2ndlayer_type, self.Config.if_vec_fc_bn, if_block, input_block_w=fc2_w_block)
             output_vec_feature_list = fc2_layer
             # 这里继续
             #         with tf.variable_scope('vec_fc_1', reuse=self.reuse):
@@ -870,14 +874,14 @@ class Feature_extraction():
         return output
 
     def get_extracted_feature(self, whole_feature_list_unmerged):
-        whole_feature_list = State_splitter().merge_tsteps_dim_to_batch(
+        whole_feature_list = State_splitter(Config = self.Config).merge_tsteps_dim_to_batch(
             whole_feature_list_unmerged)
         extracted_feature_all_heros = []
         for i, each_hero_feature in enumerate(whole_feature_list):
             with tf.variable_scope('hero'+f'_{i}', reuse=self.reuse):
-                n = Config.resnet_FeatureImgLikeMg_n
+                n = self.Config.resnet_FeatureImgLikeMg_n
                 img_feature_extracted = [self.img_feature_extraction(
-                    each_hero_feature[0], Config.img_num_res_blocks, self.reuse, Config.img_net_type)]
+                    each_hero_feature[0], self.Config.img_num_res_blocks, self.reuse, self.Config.img_net_type)]
                 vec_feature_extracted_list = self.vec_feature_extraction(
                     each_hero_feature[1:])
                 vec_feature_extracted_list_flatten = []
@@ -893,12 +897,13 @@ class Feature_extraction():
 
 
 class LSTM():
-    def __init__(self, lstm_hidden_dim):
+    def __init__(self, lstm_hidden_dim, Config):
+        self.Config = Config
         self.lstm_hidden_dim = lstm_hidden_dim
         self.lstm_cell_ah = [tf.nn.rnn_cell.LSTMCell(
             self.lstm_hidden_dim) for _ in range(3)]
-        self.reuse = Config.reuse
-        self.tstep = Config.LSTM_TIME_STEPS
+        self.reuse = self.Config.reuse
+        self.tstep = self.Config.LSTM_TIME_STEPS
         #for actor
         self.tstep = 1
         # self.lstm_multi_cell=tf.nn.rnn_cell.MultiRNNCell([self.lstm_cell]*self.tstep)
@@ -983,7 +988,8 @@ class LSTM():
 class Communication():
     '''Communication between 3 heros'''
 
-    def __init__(self):
+    def __init__(self, Config):
+        self.Config = Config
         self.score_fc_weight_initializer = Config.score_fc_weight_initializer
         self.reuse = Config.reuse
 
@@ -1024,7 +1030,8 @@ class Communication():
 
 
 class ActionChooser():
-    def __init__(self):
+    def __init__(self, Config):
+        self.Config = Config
         self.reuse = Config.reuse
         self.action_fc_weight_initializer = Config.action_fc_weight_initializer
         self.action_embedding_weight_initializer = Config.action_embedding_weight_initializer
@@ -1049,7 +1056,7 @@ class ActionChooser():
             for hero in range(len(input_feature_ah)):
                 input_feature_ph = input_feature_ah[hero]
                 #import pdb
-                # pdb.set_trace()
+                #pdb.set_trace()
 
                 # Button choose begin
                 # button_fc_shape = [batch_size, EMBEDDING_DIM]
@@ -1057,16 +1064,18 @@ class ActionChooser():
                 # button_embedding_shape = [batch_size, button_num]
                 # button_choice_shape = [batch_size]
                 button_fc_weight = self._fc_weight_variable(
-                    shape=[input_feature_ph.get_shape().as_list()[-1], Config.EMBEDDING_DIM], name=f"hero{hero}_Button_fc_weight")
+                    shape=[input_feature_ph.get_shape().as_list()[-1], self.Config.EMBEDDING_DIM], name=f"hero{hero}_Button_fc_weight")
                 button_bias_weight = self._fc_bias_variable(
-                    shape=[Config.EMBEDDING_DIM], name=f"hero{hero}_Button_bias_weight")
+                    shape=[self.Config.EMBEDDING_DIM], name=f"hero{hero}_Button_bias_weight")
                 button_embedding_weight = self._embedding_weight_variable(
-                    shape=[Config.EMBEDDING_DIM, self.button_num], name=f"hero{hero}_Button_embedding_weight")
+                    shape=[self.Config.EMBEDDING_DIM, self.button_num], name=f"hero{hero}_Button_embedding_weight")
                 button_fc = tf.matmul(input_feature_ph, button_fc_weight) + button_bias_weight
+                button_fc = tf.nn.relu(button_fc)
                 button_embedding = tf.matmul(
                     button_fc, button_embedding_weight)
-                button_embedding = tf.nn.softmax(button_embedding, axis=-1)
+                #button_embedding = tf.nn.softmax(button_embedding, axis=-1)
                 button_choice = tf.argmax(button_embedding, axis=-1)
+                #button_fc = tf.nn.softmax(button_fc, axis=-1)
                 # Button choose end
 
                 # Target choose begin
@@ -1078,19 +1087,20 @@ class ActionChooser():
                 button_choice_embedding = tf.nn.embedding_lookup(
                     tf.transpose(button_embedding_weight, [1, 0]), button_choice)
                 target_embedding_weight = self._embedding_weight_variable(
-                    shape=[Config.EMBEDDING_DIM, self.target_num], name=f"hero{hero}_Target_embedding_weight")
+                    shape=[self.Config.EMBEDDING_DIM, self.target_num], name=f"hero{hero}_Target_embedding_weight")
                 button_target_embedding_weight = tf.expand_dims(
                     button_choice_embedding, axis=-1) * target_embedding_weight
                 target_fc_weight = self._fc_weight_variable(
-                    shape=[input_feature_ph.get_shape().as_list()[-1], Config.EMBEDDING_DIM], name=f"hero{hero}_Target_fc_weight")
+                    shape=[input_feature_ph.get_shape().as_list()[-1], self.Config.EMBEDDING_DIM], name=f"hero{hero}_Target_fc_weight")
                 target_bias_weight = self._fc_bias_variable(
-                    shape=[Config.EMBEDDING_DIM], name=f"hero{hero}_Target_bias_weight")
+                    shape=[self.Config.EMBEDDING_DIM], name=f"hero{hero}_Target_bias_weight")
                 target_fc = tf.matmul(input_feature_ph, target_fc_weight) + target_bias_weight
                 target_embedding = tf.matmul(tf.expand_dims(
                     target_fc, axis=1), button_target_embedding_weight)
                 target_embedding = tf.squeeze(target_embedding, axis=1)
-                target_embedding = tf.nn.softmax(target_embedding, axis=-1)
+                #target_embedding = tf.nn.softmax(target_embedding, axis=-1)
                 target_choice = tf.argmax(target_embedding, axis=-1)
+                #target_fc = tf.nn.softmax(target_fc, axis=-1)
                 # Target choose end
 
                 # Move choose begin
@@ -1100,7 +1110,7 @@ class ActionChooser():
                 move_bias_weight = self._fc_bias_variable(
                     shape=[self.move_num], name=f"hero{hero}_Move_bias_weight")
                 move_fc = tf.matmul(input_feature_ph, move_fc_weight) + move_bias_weight
-                move_fc = tf.nn.softmax(move_fc, axis=-1)
+                #move_fc = tf.nn.softmax(move_fc, axis=-1)
                 move_choice = tf.argmax(move_fc, axis=-1)
                 # Move choose end
 
@@ -1113,7 +1123,7 @@ class ActionChooser():
                     shape=[self.offset_x_num], name=f"hero{hero}_Offset_x_bias_weight")
                 offset_x_fc = tf.matmul(
                     input_feature_ph, offset_x_fc_weight) + offset_x_bias_weight
-                offset_x_fc = tf.nn.softmax(offset_x_fc, axis=-1)
+                #offset_x_fc = tf.nn.softmax(offset_x_fc, axis=-1)
                 offset_x_choice = tf.argmax(offset_x_fc, axis=-1)
                 offset_z_fc_weight = self._fc_weight_variable(
                     shape=[input_feature_ph.get_shape().as_list()[-1], self.offset_z_num], name=f"hero{hero}_Offset_z_fc_weight")
@@ -1121,7 +1131,7 @@ class ActionChooser():
                     shape=[self.offset_z_num], name=f"hero{hero}_Offset_z_bias_weight")
                 offset_z_fc = tf.matmul(
                     input_feature_ph, offset_z_fc_weight) + offset_z_bias_weight
-                offset_z_fc = tf.nn.softmax(offset_z_fc, axis=-1)
+                #offset_z_fc = tf.nn.softmax(offset_z_fc, axis=-1)
                 offset_z_choice = tf.argmax(offset_z_fc, axis=-1)
                 # Offset choose end
 
