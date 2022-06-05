@@ -1056,7 +1056,7 @@ class ActionChooser():
             for hero in range(len(input_feature_ah)):
                 input_feature_ph = input_feature_ah[hero]
                 #import pdb
-                # pdb.set_trace()
+                #pdb.set_trace()
 
                 # Button choose begin
                 # button_fc_shape = [batch_size, EMBEDDING_DIM]
@@ -1070,10 +1070,12 @@ class ActionChooser():
                 button_embedding_weight = self._embedding_weight_variable(
                     shape=[self.Config.EMBEDDING_DIM, self.button_num], name=f"hero{hero}_Button_embedding_weight")
                 button_fc = tf.matmul(input_feature_ph, button_fc_weight) + button_bias_weight
+                button_fc = tf.nn.relu(button_fc)
                 button_embedding = tf.matmul(
                     button_fc, button_embedding_weight)
-                button_embedding = tf.nn.softmax(button_embedding, axis=-1)
+                #button_embedding = tf.nn.softmax(button_embedding, axis=-1)
                 button_choice = tf.argmax(button_embedding, axis=-1)
+                #button_fc = tf.nn.softmax(button_fc, axis=-1)
                 # Button choose end
 
                 # Target choose begin
@@ -1096,8 +1098,9 @@ class ActionChooser():
                 target_embedding = tf.matmul(tf.expand_dims(
                     target_fc, axis=1), button_target_embedding_weight)
                 target_embedding = tf.squeeze(target_embedding, axis=1)
-                target_embedding = tf.nn.softmax(target_embedding, axis=-1)
+                #target_embedding = tf.nn.softmax(target_embedding, axis=-1)
                 target_choice = tf.argmax(target_embedding, axis=-1)
+                #target_fc = tf.nn.softmax(target_fc, axis=-1)
                 # Target choose end
 
                 # Move choose begin
@@ -1107,7 +1110,7 @@ class ActionChooser():
                 move_bias_weight = self._fc_bias_variable(
                     shape=[self.move_num], name=f"hero{hero}_Move_bias_weight")
                 move_fc = tf.matmul(input_feature_ph, move_fc_weight) + move_bias_weight
-                move_fc = tf.nn.softmax(move_fc, axis=-1)
+                #move_fc = tf.nn.softmax(move_fc, axis=-1)
                 move_choice = tf.argmax(move_fc, axis=-1)
                 # Move choose end
 
@@ -1120,7 +1123,7 @@ class ActionChooser():
                     shape=[self.offset_x_num], name=f"hero{hero}_Offset_x_bias_weight")
                 offset_x_fc = tf.matmul(
                     input_feature_ph, offset_x_fc_weight) + offset_x_bias_weight
-                offset_x_fc = tf.nn.softmax(offset_x_fc, axis=-1)
+                #offset_x_fc = tf.nn.softmax(offset_x_fc, axis=-1)
                 offset_x_choice = tf.argmax(offset_x_fc, axis=-1)
                 offset_z_fc_weight = self._fc_weight_variable(
                     shape=[input_feature_ph.get_shape().as_list()[-1], self.offset_z_num], name=f"hero{hero}_Offset_z_fc_weight")
@@ -1128,7 +1131,7 @@ class ActionChooser():
                     shape=[self.offset_z_num], name=f"hero{hero}_Offset_z_bias_weight")
                 offset_z_fc = tf.matmul(
                     input_feature_ph, offset_z_fc_weight) + offset_z_bias_weight
-                offset_z_fc = tf.nn.softmax(offset_z_fc, axis=-1)
+                #offset_z_fc = tf.nn.softmax(offset_z_fc, axis=-1)
                 offset_z_choice = tf.argmax(offset_z_fc, axis=-1)
                 # Offset choose end
 
